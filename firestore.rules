@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Regras para caixas_diarios
+    match /caixas_diarios/{document} {
+      // Permitir leitura e escrita apenas para usuários autenticados
+      allow read, write: if request.auth != null;
+      
+      // Validar estrutura dos dados na criação/atualização
+      allow create, update: if request.auth != null 
+        && validateCaixaDiario(resource.data, request.resource.data);
+    }
+    
+    // Regras para caixa_central
+    match /caixa_central/{document} {
+      // Permitir leitura e escrita apenas para usuários autenticados
+      allow read, write: if request.auth != null;
+      
+      // Validar estrutura dos dados na criação/atualização
+      allow create, update: if request.auth != null 
+        && validateCaixaCentral(resource.data, request.resource.data);
+    }
+    
+    // Função para validar dados de caixa diário
+    function validateCaixaDiario(existingData, newData) {
+      return newData.keys().hasAll(['data', 'caixa', 'saldoInicial', 'suprimentos', 'sangrias', 'valorFinalMaquina', 'saldoFinalCalculado', 'divergencia', 'observacoes'])
+        && newData.data is string
+        && newData.caixa is number
+        && newData.caixa >= 1 && newData.caixa <= 6
+        && newData.saldoInicial is number
+        && newData.suprimentos is list
+        && newData.sangrias is list
+        && newData.valorFinalMaquina is number
+        && newData.saldoFinalCalculado is number
+        && newData.divergencia is bool
+        && newData.observacoes is string;
+    }
+    
+    // Função para validar dados de caixa central
+    function validateCaixaCentral(existingData, newData) {
+      return newData.keys().hasAll(['data', 'totalSuprimentos', 'totalSangrias', 'saldoConsolidado', 'divergencias', 'observacoes'])
+        && newData.data is string
+        && newData.totalSuprimentos is number
+        && newData.totalSangrias is number
+        && newData.saldoConsolidado is number
+        && newData.divergencias is list
+        && newData.observacoes is string;
+    }
+  }
+}
+
