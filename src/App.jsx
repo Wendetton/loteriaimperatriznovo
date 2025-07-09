@@ -1,4 +1,4 @@
-// App.jsx - SISTEMA COMPLETO E CORRIGIDO
+// App.jsx - SISTEMA CORRIGIDO FINAL
 import { useState, useEffect, createContext, useContext } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { 
@@ -19,8 +19,29 @@ import { db } from './services/firebase'
 import Login from './pages/Login'
 import './App.css'
 
-// SUPER ADMIN EMAIL
-const SUPER_ADMIN_EMAIL = 'feazegoncalves@gmail.com'
+// ========================================
+// 📧 CONFIGURAÇÃO DE USUÁRIOS
+// ========================================
+// Adicione aqui os emails e suas funções:
+
+const USUARIOS_CONFIGURADOS = {
+  // ADMINISTRADORES (acesso completo)
+  'feazegoncalves@gmail.com': { tipo: 'admin', nome: 'Administrador Principal' },
+  'admin@loteriaimperatriz.com': { tipo: 'admin', nome: 'Administrador' },
+  
+  // OPERADORES DE CAIXA (acesso limitado ao próprio caixa)
+  'caixa1@loteriaimperatriz.com': { tipo: 'operador', caixa: 1, nome: 'Operador Caixa 1' },
+  'caixa2@loteriaimperatriz.com': { tipo: 'operador', caixa: 2, nome: 'Operador Caixa 2' },
+  'caixa3@loteriaimperatriz.com': { tipo: 'operador', caixa: 3, nome: 'Operador Caixa 3' },
+  'caixa4@loteriaimperatriz.com': { tipo: 'operador', caixa: 4, nome: 'Operador Caixa 4' },
+  'caixa5@loteriaimperatriz.com': { tipo: 'operador', caixa: 5, nome: 'Operador Caixa 5' },
+  'caixa6@loteriaimperatriz.com': { tipo: 'operador', caixa: 6, nome: 'Operador Caixa 6' },
+}
+
+// Função para obter dados do usuário
+const obterDadosUsuario = (email) => {
+  return USUARIOS_CONFIGURADOS[email] || null
+}
 
 // Context para controle de data
 const DataContext = createContext()
@@ -46,7 +67,6 @@ function MovimentacoesProvider({ children }) {
   const [movimentacoes, setMovimentacoes] = useState([])
   const [caixasData, setCaixasData] = useState({})
   const [caixaCentralData, setCaixaCentralData] = useState({})
-  const [usuarios, setUsuarios] = useState([])
   const [loading, setLoading] = useState(true)
   const { dataSelecionada } = useData()
   const { currentUser } = useAuth()
@@ -69,16 +89,6 @@ function MovimentacoesProvider({ children }) {
       const movs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
       setMovimentacoes(movs)
     })
-
-    // Carregar usuários (apenas para super admin)
-    if (currentUser.email === SUPER_ADMIN_EMAIL) {
-      const carregarUsuarios = async () => {
-        const usuariosSnap = await getDocs(collection(db, 'usuarios'))
-        const usuariosList = usuariosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        setUsuarios(usuariosList)
-      }
-      carregarUsuarios()
-    }
 
     // Carregar dados dos caixas
     const carregarDadosCaixas = async () => {
@@ -220,24 +230,6 @@ function MovimentacoesProvider({ children }) {
     }
   }
 
-  // Criar usuário
-  const criarUsuario = async (dadosUsuario) => {
-    try {
-      const docRef = doc(collection(db, 'usuarios'))
-      await setDoc(docRef, {
-        ...dadosUsuario,
-        criadoPor: currentUser.email,
-        criadoEm: serverTimestamp(),
-        ativo: true
-      })
-      
-      return { success: true }
-    } catch (error) {
-      console.error('Erro ao criar usuário:', error)
-      return { success: false, error: error.message }
-    }
-  }
-
   // Calcular totais por caixa
   const calcularTotaisCaixa = (numeroCaixa) => {
     const movsCaixa = movimentacoes.filter(m => m.caixa === numeroCaixa)
@@ -245,7 +237,6 @@ function MovimentacoesProvider({ children }) {
     
     const suprimentos = movsCaixa.filter(m => m.tipo === 'suprimento').reduce((acc, m) => acc + m.valor, 0)
     const sangrias = movsCaixa.filter(m => m.tipo === 'sangria').reduce((acc, m) => acc + m.valor, 0)
-    const cheques = movsCaixa.filter(m => m.tipo === 'cheque').reduce((acc, m) => acc + m.valor, 0)
     
     const trocoInicial = dadosCaixa.trocoInicial || 0
     const valorMaquina = dadosCaixa.valorMaquina || 0
@@ -257,7 +248,6 @@ function MovimentacoesProvider({ children }) {
       trocoInicial,
       suprimentos,
       sangrias,
-      cheques,
       valorEsperado,
       valorMaquina,
       divergencia,
@@ -271,14 +261,12 @@ function MovimentacoesProvider({ children }) {
       movimentacoes,
       caixasData,
       caixaCentralData,
-      usuarios,
       loading,
       adicionarMovimentacao,
       excluirMovimentacao,
       atualizarCaixa,
       atualizarCaixaCentral,
       fecharCaixa,
-      criarUsuario,
       calcularTotaisCaixa
     }}>
       {children}
@@ -309,7 +297,7 @@ const formatarDataHora = (timestamp) => {
 }
 
 // Componente Header
-function Header({ onLogout, userEmail, tipoUsuario }) {
+function Header({ onLogout, userEmail, dadosUsuario }) {
   const { dataSelecionada, setDataSelecionada } = useData()
 
   return (
@@ -320,24 +308,26 @@ function Header({ onLogout, userEmail, tipoUsuario }) {
           <p className="text-sm opacity-90">Sistema de Gestão Financeira</p>
         </div>
         
-        <div className="flex items-center gap-4">
-          <div>
-            <label className="block text-sm opacity-90 mb-1">Data:</label>
-            <input
-              type="date"
-              value={dataSelecionada}
-              onChange={(e) => setDataSelecionada(e.target.value)}
-              className="px-3 py-1 rounded text-gray-800 text-sm"
-            />
+        {dadosUsuario.tipo === 'admin' && (
+          <div className="flex items-center gap-4">
+            <div>
+              <label className="block text-sm opacity-90 mb-1">Data:</label>
+              <input
+                type="date"
+                value={dataSelecionada}
+                onChange={(e) => setDataSelecionada(e.target.value)}
+                className="px-3 py-1 rounded text-gray-800 text-sm"
+              />
+            </div>
           </div>
-        </div>
+        )}
         
         <div className="flex items-center gap-4">
           <div className="text-right">
             <p className="text-sm opacity-90">
-              {userEmail === SUPER_ADMIN_EMAIL ? 'Super Admin' : 'Administrador'}
+              {dadosUsuario.tipo === 'admin' ? 'Administrador' : `Operador - Caixa ${dadosUsuario.caixa}`}
             </p>
-            <p className="font-semibold">{userEmail}</p>
+            <p className="font-semibold">{dadosUsuario.nome}</p>
           </div>
           <button 
             onClick={onLogout}
@@ -351,8 +341,8 @@ function Header({ onLogout, userEmail, tipoUsuario }) {
   )
 }
 
-// Componente Gestão de Caixa Individual (Admin)
-function GestaCaixaIndividual({ numeroCaixa }) {
+// Componente Gestão de Caixa Individual
+function GestaCaixaIndividual({ numeroCaixa, dadosUsuario }) {
   const { 
     adicionarMovimentacao, 
     calcularTotaisCaixa, 
@@ -369,13 +359,12 @@ function GestaCaixaIndividual({ numeroCaixa }) {
   const [obsSuprimento, setObsSuprimento] = useState('')
   const [valorSangria, setValorSangria] = useState('')
   const [obsSangria, setObsSangria] = useState('')
-  const [valorCheque, setValorCheque] = useState('')
-  const [obsCheque, setObsCheque] = useState('')
   const [obsFechamento, setObsFechamento] = useState('')
 
   const totais = calcularTotaisCaixa(numeroCaixa)
   const movsCaixa = movimentacoes.filter(m => m.caixa === numeroCaixa)
   const dadosCaixa = caixasData[numeroCaixa] || {}
+  const isAdmin = dadosUsuario.tipo === 'admin'
 
   // Carregar valores iniciais
   useEffect(() => {
@@ -421,12 +410,13 @@ function GestaCaixaIndividual({ numeroCaixa }) {
       caixa: numeroCaixa,
       tipo: 'suprimento',
       valor: parseFloat(valorSuprimento),
-      observacao: obsSuprimento
+      observacao: obsSuprimento || 'Suprimento'
     })
 
     if (resultado.success) {
       setValorSuprimento('')
       setObsSuprimento('')
+      alert('Suprimento adicionado com sucesso!')
     } else {
       alert('Erro ao adicionar suprimento: ' + resultado.error)
     }
@@ -442,35 +432,15 @@ function GestaCaixaIndividual({ numeroCaixa }) {
       caixa: numeroCaixa,
       tipo: 'sangria',
       valor: parseFloat(valorSangria),
-      observacao: obsSangria
+      observacao: obsSangria || 'Sangria'
     })
 
     if (resultado.success) {
       setValorSangria('')
       setObsSangria('')
+      alert('Sangria adicionada com sucesso!')
     } else {
       alert('Erro ao adicionar sangria: ' + resultado.error)
-    }
-  }
-
-  const handleAdicionarCheque = async () => {
-    if (!valorCheque || parseFloat(valorCheque) <= 0) {
-      alert('Por favor, insira um valor válido para o cheque')
-      return
-    }
-
-    const resultado = await adicionarMovimentacao({
-      caixa: numeroCaixa,
-      tipo: 'cheque',
-      valor: parseFloat(valorCheque),
-      observacao: obsCheque
-    })
-
-    if (resultado.success) {
-      setValorCheque('')
-      setObsCheque('')
-    } else {
-      alert('Erro ao adicionar cheque: ' + resultado.error)
     }
   }
 
@@ -525,52 +495,54 @@ function GestaCaixaIndividual({ numeroCaixa }) {
           </div>
         </div>
 
-        {/* Configurações do Caixa */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-gray-800 mb-3">⚙️ Configurar Troco Inicial</h3>
-            <div className="flex gap-2">
-              <input 
-                type="number" 
-                step="0.01"
-                placeholder="Valor do troco inicial (R$)" 
-                value={trocoInicial}
-                onChange={(e) => setTrocoInicial(e.target.value)}
-                className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                disabled={totais.fechado}
-              />
-              <button 
-                onClick={handleAtualizarTrocoInicial}
-                disabled={totais.fechado}
-                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors disabled:bg-gray-400"
-              >
-                Definir
-              </button>
+        {/* Configurações do Caixa - APENAS PARA ADMINS */}
+        {isAdmin && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h3 className="font-semibold text-gray-800 mb-3">⚙️ Configurar Troco Inicial</h3>
+              <div className="flex gap-2">
+                <input 
+                  type="number" 
+                  step="0.01"
+                  placeholder="Valor do troco inicial (R$)" 
+                  value={trocoInicial}
+                  onChange={(e) => setTrocoInicial(e.target.value)}
+                  className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                  disabled={totais.fechado}
+                />
+                <button 
+                  onClick={handleAtualizarTrocoInicial}
+                  disabled={totais.fechado}
+                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors disabled:bg-gray-400"
+                >
+                  Definir
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-gray-800 mb-3">🖥️ Valor da Máquina</h3>
-            <div className="flex gap-2">
-              <input 
-                type="number" 
-                step="0.01"
-                placeholder="Valor final da máquina (R$)" 
-                value={valorMaquina}
-                onChange={(e) => setValorMaquina(e.target.value)}
-                className="flex-1 p-2 border rounded focus:ring-2 focus:ring-gray-500"
-                disabled={totais.fechado}
-              />
-              <button 
-                onClick={handleAtualizarValorMaquina}
-                disabled={totais.fechado}
-                className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors disabled:bg-gray-400"
-              >
-                Definir
-              </button>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h3 className="font-semibold text-gray-800 mb-3">🖥️ Valor da Máquina</h3>
+              <div className="flex gap-2">
+                <input 
+                  type="number" 
+                  step="0.01"
+                  placeholder="Valor final da máquina (R$)" 
+                  value={valorMaquina}
+                  onChange={(e) => setValorMaquina(e.target.value)}
+                  className="flex-1 p-2 border rounded focus:ring-2 focus:ring-gray-500"
+                  disabled={totais.fechado}
+                />
+                <button 
+                  onClick={handleAtualizarValorMaquina}
+                  disabled={totais.fechado}
+                  className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors disabled:bg-gray-400"
+                >
+                  Definir
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Divergência */}
         {dadosCaixa.valorMaquina > 0 && totais.temDivergencia && (
@@ -585,7 +557,7 @@ function GestaCaixaIndividual({ numeroCaixa }) {
 
       {/* Operações */}
       {!totais.fechado && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Suprimento */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h3 className="text-lg font-semibold mb-4 text-green-700">➕ Adicionar Suprimento</h3>
@@ -600,7 +572,7 @@ function GestaCaixaIndividual({ numeroCaixa }) {
               />
               <input 
                 type="text" 
-                placeholder="Observação" 
+                placeholder="Observação (opcional)" 
                 value={obsSuprimento}
                 onChange={(e) => setObsSuprimento(e.target.value)}
                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500"
@@ -628,7 +600,7 @@ function GestaCaixaIndividual({ numeroCaixa }) {
               />
               <input 
                 type="text" 
-                placeholder="Observação" 
+                placeholder="Observação (opcional)" 
                 value={obsSangria}
                 onChange={(e) => setObsSangria(e.target.value)}
                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500"
@@ -641,39 +613,11 @@ function GestaCaixaIndividual({ numeroCaixa }) {
               </button>
             </div>
           </div>
-
-          {/* Cheque */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="text-lg font-semibold mb-4 text-purple-700">📄 Adicionar Cheque</h3>
-            <div className="space-y-3">
-              <input 
-                type="number" 
-                step="0.01"
-                placeholder="Valor (R$)" 
-                value={valorCheque}
-                onChange={(e) => setValorCheque(e.target.value)}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500"
-              />
-              <input 
-                type="text" 
-                placeholder="Observação" 
-                value={obsCheque}
-                onChange={(e) => setObsCheque(e.target.value)}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500"
-              />
-              <button 
-                onClick={handleAdicionarCheque}
-                className="w-full bg-purple-600 text-white p-3 rounded-lg hover:bg-purple-700 transition-colors font-semibold"
-              >
-                Adicionar Cheque
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
-      {/* Fechamento do Caixa */}
-      {!totais.fechado && dadosCaixa.valorMaquina > 0 && (
+      {/* Fechamento do Caixa - APENAS PARA ADMINS */}
+      {isAdmin && !totais.fechado && dadosCaixa.valorMaquina > 0 && (
         <div className="bg-white rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold mb-4 text-teal-700">🔒 Fechamento do Caixa</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -705,10 +649,9 @@ function GestaCaixaIndividual({ numeroCaixa }) {
               <div key={mov.id} className="flex justify-between items-center p-3 bg-gray-50 rounded">
                 <div>
                   <span className={`font-semibold ${
-                    mov.tipo === 'suprimento' ? 'text-green-600' : 
-                    mov.tipo === 'sangria' ? 'text-red-600' : 'text-purple-600'
+                    mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
                   }`}>
-                    {mov.tipo === 'suprimento' ? '➕' : mov.tipo === 'sangria' ? '➖' : '📄'} 
+                    {mov.tipo === 'suprimento' ? '➕' : '➖'} 
                     {mov.tipo.charAt(0).toUpperCase() + mov.tipo.slice(1)}
                   </span>
                   <p className="text-sm text-gray-600">{mov.observacao}</p>
@@ -717,8 +660,7 @@ function GestaCaixaIndividual({ numeroCaixa }) {
                   </p>
                 </div>
                 <span className={`font-bold ${
-                  mov.tipo === 'suprimento' ? 'text-green-600' : 
-                  mov.tipo === 'sangria' ? 'text-red-600' : 'text-purple-600'
+                  mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
                 }`}>
                   {formatarMoeda(mov.valor)}
                 </span>
@@ -789,7 +731,7 @@ function CaixaCentral() {
 
     const novoValorExtra = {
       valor: parseFloat(valorExtra),
-      observacao: obsExtra,
+      observacao: obsExtra || 'Valor extra',
       criadoEm: new Date().toISOString()
     }
 
@@ -823,16 +765,14 @@ function CaixaCentral() {
   const calcularTotaisGerais = () => {
     let totalSuprimentos = 0
     let totalSangrias = 0
-    let totalCheques = 0
 
     for (let i = 1; i <= 6; i++) {
       const totais = calcularTotaisCaixa(i)
       totalSuprimentos += totais.suprimentos
       totalSangrias += totais.sangrias
-      totalCheques += totais.cheques
     }
 
-    return { totalSuprimentos, totalSangrias, totalCheques }
+    return { totalSuprimentos, totalSangrias }
   }
 
   const totaisGerais = calcularTotaisGerais()
@@ -960,7 +900,7 @@ function CaixaCentral() {
       {/* Resumo dos Caixas */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h3 className="text-lg font-semibold mb-4">📊 Resumo dos Caixas</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div className="bg-green-50 p-4 rounded-lg">
             <h4 className="font-semibold text-green-800">Total Suprimentos Enviados</h4>
             <p className="text-xl font-bold text-green-600">{formatarMoeda(totaisGerais.totalSuprimentos)}</p>
@@ -968,10 +908,6 @@ function CaixaCentral() {
           <div className="bg-red-50 p-4 rounded-lg">
             <h4 className="font-semibold text-red-800">Total Sangrias Recebidas</h4>
             <p className="text-xl font-bold text-red-600">{formatarMoeda(totaisGerais.totalSangrias)}</p>
-          </div>
-          <div className="bg-purple-50 p-4 rounded-lg">
-            <h4 className="font-semibold text-purple-800">Total Cheques</h4>
-            <p className="text-xl font-bold text-purple-600">{formatarMoeda(totaisGerais.totalCheques)}</p>
           </div>
         </div>
       </div>
@@ -1013,18 +949,16 @@ function Relatorio() {
   const calcularResumoGeral = () => {
     let totalSuprimentos = 0
     let totalSangrias = 0
-    let totalCheques = 0
     let caixasFechados = 0
 
     for (let i = 1; i <= 6; i++) {
       const totais = calcularTotaisCaixa(i)
       totalSuprimentos += totais.suprimentos
       totalSangrias += totais.sangrias
-      totalCheques += totais.cheques
       if (totais.fechado) caixasFechados++
     }
 
-    return { totalSuprimentos, totalSangrias, totalCheques, caixasFechados }
+    return { totalSuprimentos, totalSangrias, caixasFechados }
   }
 
   const resumoGeral = calcularResumoGeral()
@@ -1048,7 +982,7 @@ function Relatorio() {
         </div>
 
         {/* Resumo Geral */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 print:grid-cols-4 print:gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:grid-cols-3 print:gap-2">
           <div className="bg-green-50 p-4 rounded-lg print:border print:bg-white">
             <h3 className="font-semibold text-green-800 text-sm">Total Suprimentos</h3>
             <p className="text-lg font-bold text-green-600">{formatarMoeda(resumoGeral.totalSuprimentos)}</p>
@@ -1056,10 +990,6 @@ function Relatorio() {
           <div className="bg-red-50 p-4 rounded-lg print:border print:bg-white">
             <h3 className="font-semibold text-red-800 text-sm">Total Sangrias</h3>
             <p className="text-lg font-bold text-red-600">{formatarMoeda(resumoGeral.totalSangrias)}</p>
-          </div>
-          <div className="bg-purple-50 p-4 rounded-lg print:border print:bg-white">
-            <h3 className="font-semibold text-purple-800 text-sm">Total Cheques</h3>
-            <p className="text-lg font-bold text-purple-600">{formatarMoeda(resumoGeral.totalCheques)}</p>
           </div>
           <div className="bg-blue-50 p-4 rounded-lg print:border print:bg-white">
             <h3 className="font-semibold text-blue-800 text-sm">Caixas Fechados</h3>
@@ -1113,8 +1043,7 @@ function Relatorio() {
                     <div key={mov.id} className="flex justify-between items-center text-xs p-2 bg-gray-50 rounded print:bg-gray-100">
                       <div>
                         <span className={`font-semibold ${
-                          mov.tipo === 'suprimento' ? 'text-green-600' : 
-                          mov.tipo === 'sangria' ? 'text-red-600' : 'text-purple-600'
+                          mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
                         }`}>
                           {mov.tipo.charAt(0).toUpperCase() + mov.tipo.slice(1)}
                         </span>
@@ -1122,8 +1051,7 @@ function Relatorio() {
                         <span className="text-gray-500 block">{formatarDataHora(mov.criadoEm)} - {mov.criadoPor}</span>
                       </div>
                       <span className={`font-bold ${
-                        mov.tipo === 'suprimento' ? 'text-green-600' : 
-                        mov.tipo === 'sangria' ? 'text-red-600' : 'text-purple-600'
+                        mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
                       }`}>
                         {formatarMoeda(mov.valor)}
                       </span>
@@ -1183,133 +1111,14 @@ function Relatorio() {
   )
 }
 
-// Componente Gestão de Usuários (apenas para super admin)
-function GestaoUsuarios() {
-  const { usuarios, criarUsuario } = useMovimentacoes()
-  const [novoUsuario, setNovoUsuario] = useState({
-    email: '',
-    nome: '',
-    tipo: 'admin',
-    caixaAtribuido: ''
-  })
-
-  const handleCriarUsuario = async () => {
-    if (!novoUsuario.email || !novoUsuario.nome) {
-      alert('Por favor, preencha email e nome')
-      return
-    }
-
-    if (novoUsuario.tipo === 'operador' && !novoUsuario.caixaAtribuido) {
-      alert('Por favor, selecione um caixa para o operador')
-      return
-    }
-
-    const dadosUsuario = {
-      ...novoUsuario,
-      caixaAtribuido: novoUsuario.tipo === 'operador' ? parseInt(novoUsuario.caixaAtribuido) : null
-    }
-
-    const resultado = await criarUsuario(dadosUsuario)
-    if (resultado.success) {
-      alert('Usuário criado com sucesso!')
-      setNovoUsuario({ email: '', nome: '', tipo: 'admin', caixaAtribuido: '' })
-    } else {
-      alert('Erro ao criar usuário: ' + resultado.error)
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">👥 Gestão de Usuários</h2>
-        
-        {/* Criar Novo Usuário */}
-        <div className="bg-gray-50 p-4 rounded-lg mb-6">
-          <h3 className="text-lg font-semibold mb-4">➕ Criar Novo Usuário</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input
-              type="email"
-              placeholder="Email"
-              value={novoUsuario.email}
-              onChange={(e) => setNovoUsuario(prev => ({ ...prev, email: e.target.value }))}
-              className="p-3 border rounded-lg"
-            />
-            <input
-              type="text"
-              placeholder="Nome completo"
-              value={novoUsuario.nome}
-              onChange={(e) => setNovoUsuario(prev => ({ ...prev, nome: e.target.value }))}
-              className="p-3 border rounded-lg"
-            />
-            <select
-              value={novoUsuario.tipo}
-              onChange={(e) => setNovoUsuario(prev => ({ ...prev, tipo: e.target.value, caixaAtribuido: '' }))}
-              className="p-3 border rounded-lg"
-            >
-              <option value="admin">Administrador</option>
-              <option value="operador">Operador de Caixa</option>
-            </select>
-            {novoUsuario.tipo === 'operador' && (
-              <select
-                value={novoUsuario.caixaAtribuido}
-                onChange={(e) => setNovoUsuario(prev => ({ ...prev, caixaAtribuido: e.target.value }))}
-                className="p-3 border rounded-lg"
-              >
-                <option value="">Selecione o caixa</option>
-                {[1,2,3,4,5,6].map(num => (
-                  <option key={num} value={num}>Caixa {num}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <button
-            onClick={handleCriarUsuario}
-            className="mt-4 bg-teal-600 text-white px-6 py-3 rounded-lg hover:bg-teal-700 transition-colors"
-          >
-            Criar Usuário
-          </button>
-        </div>
-
-        {/* Lista de Usuários */}
-        <div>
-          <h3 className="text-lg font-semibold mb-4">📋 Usuários Cadastrados</h3>
-          {usuarios.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">Nenhum usuário cadastrado</p>
-          ) : (
-            <div className="space-y-2">
-              {usuarios.map(usuario => (
-                <div key={usuario.id} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                  <div>
-                    <p className="font-semibold">{usuario.nome}</p>
-                    <p className="text-sm text-gray-600">{usuario.email}</p>
-                    <p className="text-xs text-gray-500">
-                      {usuario.tipo === 'admin' ? 'Administrador' : `Operador - Caixa ${usuario.caixaAtribuido}`}
-                    </p>
-                  </div>
-                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                    usuario.ativo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
-                    {usuario.ativo ? 'Ativo' : 'Inativo'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // Dashboard para Administradores
-function DashboardAdmin() {
+function DashboardAdmin({ dadosUsuario }) {
   const { 
     movimentacoes, 
     loading, 
     excluirMovimentacao, 
     calcularTotaisCaixa 
   } = useMovimentacoes()
-  const { currentUser } = useAuth()
   const [telaAtiva, setTelaAtiva] = useState('resumo')
   const [senhaExclusao, setSenhaExclusao] = useState('')
   const [movParaExcluir, setMovParaExcluir] = useState(null)
@@ -1342,7 +1151,6 @@ function DashboardAdmin() {
   const calcularResumoGeral = () => {
     let totalSuprimentos = 0
     let totalSangrias = 0
-    let totalCheques = 0
     let caixasFechados = 0
     let totalDivergencias = 0
 
@@ -1350,7 +1158,6 @@ function DashboardAdmin() {
       const totais = calcularTotaisCaixa(i)
       totalSuprimentos += totais.suprimentos
       totalSangrias += totais.sangrias
-      totalCheques += totais.cheques
       if (totais.fechado) caixasFechados++
       if (totais.temDivergencia) totalDivergencias += Math.abs(totais.divergencia)
     }
@@ -1358,7 +1165,6 @@ function DashboardAdmin() {
     return {
       totalSuprimentos,
       totalSangrias,
-      totalCheques,
       caixasFechados,
       totalDivergencias,
       percentualFechamento: (caixasFechados / 6) * 100
@@ -1385,14 +1191,14 @@ function DashboardAdmin() {
                 <h3 className="font-semibold text-red-800">Total Sangrias</h3>
                 <p className="text-2xl font-bold text-red-600">{formatarMoeda(resumoGeral.totalSangrias)}</p>
               </div>
-              <div className="bg-purple-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-purple-800">Total Cheques</h3>
-                <p className="text-2xl font-bold text-purple-600">{formatarMoeda(resumoGeral.totalCheques)}</p>
-              </div>
               <div className="bg-blue-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-blue-800">Progresso</h3>
                 <p className="text-2xl font-bold text-blue-600">{resumoGeral.caixasFechados}/6</p>
                 <p className="text-sm text-blue-600">{resumoGeral.percentualFechamento.toFixed(0)}% concluído</p>
+              </div>
+              <div className="bg-yellow-50 p-4 rounded-lg">
+                <h3 className="font-semibold text-yellow-800">Divergências</h3>
+                <p className="text-2xl font-bold text-yellow-600">{formatarMoeda(resumoGeral.totalDivergencias)}</p>
               </div>
             </div>
 
@@ -1413,7 +1219,6 @@ function DashboardAdmin() {
                     <th className="text-left p-2">Troco Inicial</th>
                     <th className="text-left p-2">Suprimentos</th>
                     <th className="text-left p-2">Sangrias</th>
-                    <th className="text-left p-2">Cheques</th>
                     <th className="text-left p-2">Valor Esperado</th>
                     <th className="text-left p-2">Valor Máquina</th>
                     <th className="text-left p-2">Divergência</th>
@@ -1435,7 +1240,6 @@ function DashboardAdmin() {
                         <td className="p-2 text-blue-600">{formatarMoeda(totais.trocoInicial)}</td>
                         <td className="p-2 text-green-600">{formatarMoeda(totais.suprimentos)}</td>
                         <td className="p-2 text-red-600">{formatarMoeda(totais.sangrias)}</td>
-                        <td className="p-2 text-purple-600">{formatarMoeda(totais.cheques)}</td>
                         <td className="p-2 text-blue-600">{formatarMoeda(totais.valorEsperado)}</td>
                         <td className="p-2">{formatarMoeda(totais.valorMaquina)}</td>
                         <td className="p-2">
@@ -1468,10 +1272,9 @@ function DashboardAdmin() {
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-gray-600">Caixa {mov.caixa}</span>
                         <span className={`font-semibold ${
-                          mov.tipo === 'suprimento' ? 'text-green-600' : 
-                          mov.tipo === 'sangria' ? 'text-red-600' : 'text-purple-600'
+                          mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {mov.tipo === 'suprimento' ? '➕' : mov.tipo === 'sangria' ? '➖' : '📄'} 
+                          {mov.tipo === 'suprimento' ? '➕' : '➖'} 
                           {mov.tipo.charAt(0).toUpperCase() + mov.tipo.slice(1)}
                         </span>
                       </div>
@@ -1482,8 +1285,7 @@ function DashboardAdmin() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`font-bold ${
-                        mov.tipo === 'suprimento' ? 'text-green-600' : 
-                        mov.tipo === 'sangria' ? 'text-red-600' : 'text-purple-600'
+                        mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
                       }`}>
                         {formatarMoeda(mov.valor)}
                       </span>
@@ -1506,7 +1308,7 @@ function DashboardAdmin() {
 
     if (telaAtiva.startsWith('caixa-') && telaAtiva !== 'caixa-central') {
       const numeroCaixa = parseInt(telaAtiva.split('-')[1])
-      return <GestaCaixaIndividual numeroCaixa={numeroCaixa} />
+      return <GestaCaixaIndividual numeroCaixa={numeroCaixa} dadosUsuario={dadosUsuario} />
     }
 
     if (telaAtiva === 'central') {
@@ -1515,10 +1317,6 @@ function DashboardAdmin() {
 
     if (telaAtiva === 'relatorio') {
       return <Relatorio />
-    }
-
-    if (telaAtiva === 'usuarios' && currentUser.email === SUPER_ADMIN_EMAIL) {
-      return <GestaoUsuarios />
     }
 
     return <div>Tela não encontrada</div>
@@ -1538,8 +1336,7 @@ function DashboardAdmin() {
             { id: 'caixa-5', nome: 'Caixa 5', icon: '💰' },
             { id: 'caixa-6', nome: 'Caixa 6', icon: '💰' },
             { id: 'central', nome: 'Caixa Central', icon: '🏢' },
-            { id: 'relatorio', nome: 'Relatório', icon: '📄' },
-            ...(currentUser.email === SUPER_ADMIN_EMAIL ? [{ id: 'usuarios', nome: 'Usuários', icon: '👥' }] : [])
+            { id: 'relatorio', nome: 'Relatório', icon: '📄' }
           ].map(opcao => {
             const numeroCaixa = opcao.id.includes('caixa-') ? parseInt(opcao.id.split('-')[1]) : null
             const totais = numeroCaixa ? calcularTotaisCaixa(numeroCaixa) : null
@@ -1609,6 +1406,30 @@ function DashboardAdmin() {
   )
 }
 
+// Dashboard para Operadores de Caixa
+function DashboardOperador({ dadosUsuario }) {
+  const { loading } = useMovimentacoes()
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Carregando dados...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <main className="p-6">
+        <GestaCaixaIndividual numeroCaixa={dadosUsuario.caixa} dadosUsuario={dadosUsuario} />
+      </main>
+    </div>
+  )
+}
+
 // Componente principal da aplicação
 function AppContent() {
   const { currentUser, loading, logout } = useAuth()
@@ -1628,6 +1449,31 @@ function AppContent() {
     return <Login />
   }
 
+  // Verificar se o usuário está configurado
+  const dadosUsuario = obterDadosUsuario(currentUser.email)
+  
+  if (!dadosUsuario) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center bg-white p-8 rounded-lg shadow-md">
+          <h2 className="text-xl font-bold text-red-600 mb-4">Acesso Negado</h2>
+          <p className="text-gray-600 mb-4">
+            Seu email ({currentUser.email}) não está configurado no sistema.
+          </p>
+          <p className="text-sm text-gray-500 mb-4">
+            Entre em contato com o administrador para configurar seu acesso.
+          </p>
+          <button
+            onClick={logout}
+            className="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700"
+          >
+            Fazer Logout
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const handleLogout = async () => {
     try {
       await logout()
@@ -1643,10 +1489,14 @@ function AppContent() {
           <Header 
             onLogout={handleLogout} 
             userEmail={currentUser.email}
-            tipoUsuario="admin"
+            dadosUsuario={dadosUsuario}
           />
           
-          <DashboardAdmin />
+          {dadosUsuario.tipo === 'admin' ? (
+            <DashboardAdmin dadosUsuario={dadosUsuario} />
+          ) : (
+            <DashboardOperador dadosUsuario={dadosUsuario} />
+          )}
         </div>
       </MovimentacoesProvider>
     </DataProvider>
