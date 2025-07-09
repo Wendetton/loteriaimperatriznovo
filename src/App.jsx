@@ -1,23 +1,8 @@
-// App.jsx - VERSÃO COM SINCRONIZAÇÃO EM TEMPO REAL
+// App.jsx - VERSÃO SIMPLES E FUNCIONAL
 import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Login from './pages/Login'
 import './App.css'
-
-// Importações do Firebase
-import { 
-  collection, 
-  addDoc, 
-  onSnapshot, 
-  query, 
-  where, 
-  orderBy, 
-  doc, 
-  setDoc, 
-  deleteDoc,
-  getDocs 
-} from 'firebase/firestore'
-import { db } from './services/firebase'
 
 // ========================================
 // 📧 CONFIGURAÇÃO DE USUÁRIOS
@@ -62,83 +47,34 @@ const formatarDataHora = (dataString) => {
 }
 
 // ========================================
-// 🔄 FUNÇÕES DE SINCRONIZAÇÃO FIREBASE
+// 💾 FUNÇÕES DE ARMAZENAMENTO SIMPLES
 // ========================================
 
-// Salvar movimentação no Firebase
-const salvarMovimentacaoFirebase = async (movimentacao, dataSelecionada, numeroCaixa) => {
+// Salvar dados no localStorage
+const salvarDados = (chave, dados) => {
   try {
-    const docData = {
-      ...movimentacao,
-      data: dataSelecionada,
-      caixa: numeroCaixa,
-      timestamp: new Date()
-    }
-    
-    await addDoc(collection(db, 'movimentacoes'), docData)
-    console.log('✅ Movimentação salva no Firebase:', movimentacao)
+    localStorage.setItem(chave, JSON.stringify(dados))
+    console.log('✅ Dados salvos:', chave, dados)
     return true
   } catch (error) {
-    console.error('❌ Erro ao salvar no Firebase:', error)
+    console.error('❌ Erro ao salvar:', error)
     return false
   }
 }
 
-// Salvar dados do caixa no Firebase
-const salvarDadosCaixaFirebase = async (dadosCaixa, dataSelecionada, numeroCaixa) => {
+// Carregar dados do localStorage
+const carregarDados = (chave, padrao = []) => {
   try {
-    const docId = `${dataSelecionada}_caixa_${numeroCaixa}`
-    const docData = {
-      ...dadosCaixa,
-      data: dataSelecionada,
-      caixa: numeroCaixa,
-      timestamp: new Date()
+    const dados = localStorage.getItem(chave)
+    if (dados) {
+      const resultado = JSON.parse(dados)
+      console.log('📦 Dados carregados:', chave, resultado)
+      return resultado
     }
-    
-    await setDoc(doc(db, 'caixas', docId), docData)
-    console.log('✅ Dados do caixa salvos no Firebase:', dadosCaixa)
-    return true
+    return padrao
   } catch (error) {
-    console.error('❌ Erro ao salvar dados do caixa no Firebase:', error)
-    return false
-  }
-}
-
-// Salvar dados do caixa central no Firebase
-const salvarDadosCentralFirebase = async (dadosCentral, dataSelecionada) => {
-  try {
-    const docId = `${dataSelecionada}_central`
-    const docData = {
-      ...dadosCentral,
-      data: dataSelecionada,
-      timestamp: new Date()
-    }
-    
-    await setDoc(doc(db, 'caixa_central', docId), docData)
-    console.log('✅ Dados do caixa central salvos no Firebase:', dadosCentral)
-    return true
-  } catch (error) {
-    console.error('❌ Erro ao salvar dados do caixa central no Firebase:', error)
-    return false
-  }
-}
-
-// Excluir movimentação do Firebase
-const excluirMovimentacaoFirebase = async (movimentacaoId) => {
-  try {
-    // Buscar documento por ID da movimentação
-    const q = query(collection(db, 'movimentacoes'), where('id', '==', movimentacaoId))
-    const querySnapshot = await getDocs(q)
-    
-    querySnapshot.forEach(async (docSnapshot) => {
-      await deleteDoc(doc(db, 'movimentacoes', docSnapshot.id))
-    })
-    
-    console.log('✅ Movimentação excluída do Firebase:', movimentacaoId)
-    return true
-  } catch (error) {
-    console.error('❌ Erro ao excluir do Firebase:', error)
-    return false
+    console.error('❌ Erro ao carregar:', error)
+    return padrao
   }
 }
 
@@ -149,7 +85,7 @@ function Header({ onLogout, dadosUsuario, dataSelecionada, setDataSelecionada })
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-xl font-bold">Loteria Imperatriz</h1>
-          <p className="text-sm opacity-90">Sistema de Gestão Financeira - Sincronizado</p>
+          <p className="text-sm opacity-90">Sistema de Gestão Financeira - Simples</p>
         </div>
         
         {dadosUsuario.tipo === 'admin' && (
@@ -166,16 +102,12 @@ function Header({ onLogout, dadosUsuario, dataSelecionada, setDataSelecionada })
           </div>
         )}
         
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <p className="text-sm opacity-90">
-              {dadosUsuario.tipo === 'admin' ? 'Administrador' : `Operador - Caixa ${dadosUsuario.caixa}`}
-            </p>
-            <p className="font-semibold">{dadosUsuario.nome}</p>
-          </div>
+        <div className="text-right">
+          <p className="text-sm opacity-90">{dadosUsuario.tipo === 'admin' ? 'Administrador' : 'Operador'}</p>
+          <p className="font-medium">{dadosUsuario.nome}</p>
           <button 
             onClick={onLogout}
-            className="bg-teal-700 hover:bg-teal-800 px-4 py-2 rounded transition-colors"
+            className="mt-1 px-3 py-1 bg-red-500 hover:bg-red-600 rounded text-sm"
           >
             Sair
           </button>
@@ -185,544 +117,387 @@ function Header({ onLogout, dadosUsuario, dataSelecionada, setDataSelecionada })
   )
 }
 
-// Componente Gestão de Caixa Individual
-function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
-  const [movimentacoes, setMovimentacoes] = useState([])
+// Componente Sidebar
+function Sidebar({ caixaAtivo, setCaixaAtivo, dadosUsuario }) {
+  const caixasDisponiveis = dadosUsuario.tipo === 'admin' 
+    ? [1, 2, 3, 4, 5, 6] 
+    : [dadosUsuario.caixa]
+
+  return (
+    <div className="bg-gray-100 w-64 p-4 shadow-lg">
+      <nav className="space-y-2">
+        {dadosUsuario.tipo === 'admin' && (
+          <>
+            <button
+              onClick={() => setCaixaAtivo('resumo')}
+              className={`w-full text-left p-3 rounded-lg transition-colors ${
+                caixaAtivo === 'resumo' 
+                  ? 'bg-blue-500 text-white' 
+                  : 'bg-white hover:bg-blue-50'
+              }`}
+            >
+              📊 Resumo Geral
+            </button>
+          </>
+        )}
+        
+        {caixasDisponiveis.map(numero => (
+          <button
+            key={numero}
+            onClick={() => setCaixaAtivo(`caixa-${numero}`)}
+            className={`w-full text-left p-3 rounded-lg transition-colors ${
+              caixaAtivo === `caixa-${numero}` 
+                ? 'bg-green-500 text-white' 
+                : 'bg-white hover:bg-green-50'
+            }`}
+          >
+            💰 Caixa {numero}
+          </button>
+        ))}
+        
+        {dadosUsuario.tipo === 'admin' && (
+          <>
+            <button
+              onClick={() => setCaixaAtivo('central')}
+              className={`w-full text-left p-3 rounded-lg transition-colors ${
+                caixaAtivo === 'central' 
+                  ? 'bg-purple-500 text-white' 
+                  : 'bg-white hover:bg-purple-50'
+              }`}
+            >
+              🏢 Caixa Central
+            </button>
+            
+            <button
+              onClick={() => setCaixaAtivo('relatorio')}
+              className={`w-full text-left p-3 rounded-lg transition-colors ${
+                caixaAtivo === 'relatorio' 
+                  ? 'bg-red-500 text-white' 
+                  : 'bg-white hover:bg-red-50'
+              }`}
+            >
+              📄 Relatório
+            </button>
+          </>
+        )}
+      </nav>
+    </div>
+  )
+}
+
+// Componente Caixa Individual
+function CaixaIndividual({ numero, dataSelecionada, dadosUsuario }) {
   const [dadosCaixa, setDadosCaixa] = useState({
     trocoInicial: 0,
     valorMaquina: 0,
     fechado: false
   })
   
-  const [trocoInicial, setTrocoInicial] = useState('')
-  const [valorMaquina, setValorMaquina] = useState('')
-  const [valorSuprimento, setValorSuprimento] = useState('')
-  const [obsSuprimento, setObsSuprimento] = useState('')
-  const [valorSangria, setValorSangria] = useState('')
-  const [obsSangria, setObsSangria] = useState('')
-  const [sincronizando, setSincronizando] = useState(false)
+  const [movimentacoes, setMovimentacoes] = useState([])
+  const [novoSuprimento, setNovoSuprimento] = useState({ valor: '', observacao: '' })
+  const [novaSangria, setNovaSangria] = useState({ valor: '', observacao: '' })
+  const [novoTroco, setNovoTroco] = useState('')
+  const [novoValorMaquina, setNovoValorMaquina] = useState('')
 
-  const isAdmin = dadosUsuario.tipo === 'admin'
-
-  // ========================================
-  // 🔄 SINCRONIZAÇÃO EM TEMPO REAL
-  // ========================================
-
-  // Listener para movimentações em tempo real
+  // Carregar dados ao montar o componente
   useEffect(() => {
-    console.log(`🔄 Configurando listener para movimentações - Caixa ${numeroCaixa}, Data: ${dataSelecionada}`)
+    const chaveMovimentacoes = `movimentacoes_caixa_${numero}_${dataSelecionada}`
+    const chaveDados = `dados_caixa_${numero}_${dataSelecionada}`
     
-    const q = query(
-      collection(db, 'movimentacoes'),
-      where('data', '==', dataSelecionada),
-      where('caixa', '==', numeroCaixa),
-      orderBy('timestamp', 'desc')
-    )
-
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const movs = []
-      querySnapshot.forEach((doc) => {
-        movs.push({ firebaseId: doc.id, ...doc.data() })
-      })
-      
-      console.log(`📦 Movimentações recebidas do Firebase (Caixa ${numeroCaixa}):`, movs)
-      setMovimentacoes(movs)
-      
-      // Salvar no localStorage como backup
-      const keyMovs = `movimentacoes_${dataSelecionada}_${numeroCaixa}`
-      localStorage.setItem(keyMovs, JSON.stringify(movs))
-    }, (error) => {
-      console.error('❌ Erro no listener de movimentações:', error)
-      // Fallback para localStorage
-      carregarMovimentacaoesLocal()
+    const movimentacoesCarregadas = carregarDados(chaveMovimentacoes, [])
+    const dadosCarregados = carregarDados(chaveDados, {
+      trocoInicial: 0,
+      valorMaquina: 0,
+      fechado: false
     })
-
-    return () => {
-      console.log(`🔄 Desconectando listener - Caixa ${numeroCaixa}`)
-      unsubscribe()
-    }
-  }, [dataSelecionada, numeroCaixa])
-
-  // Listener para dados do caixa em tempo real
-  useEffect(() => {
-    console.log(`🔄 Configurando listener para dados do caixa - Caixa ${numeroCaixa}, Data: ${dataSelecionada}`)
     
-    const docId = `${dataSelecionada}_caixa_${numeroCaixa}`
-    const unsubscribe = onSnapshot(doc(db, 'caixas', docId), (doc) => {
-      if (doc.exists()) {
-        const dados = doc.data()
-        console.log(`📦 Dados do caixa recebidos do Firebase (Caixa ${numeroCaixa}):`, dados)
-        setDadosCaixa(dados)
-        setTrocoInicial(dados.trocoInicial || '')
-        setValorMaquina(dados.valorMaquina || '')
-        
-        // Salvar no localStorage como backup
-        const keyCaixa = `caixa_${dataSelecionada}_${numeroCaixa}`
-        localStorage.setItem(keyCaixa, JSON.stringify(dados))
-      } else {
-        console.log(`📦 Nenhum dado encontrado no Firebase para Caixa ${numeroCaixa}, carregando do localStorage`)
-        carregarDadosCaixaLocal()
-      }
-    }, (error) => {
-      console.error('❌ Erro no listener de dados do caixa:', error)
-      // Fallback para localStorage
-      carregarDadosCaixaLocal()
-    })
-
-    return () => {
-      console.log(`🔄 Desconectando listener dados do caixa - Caixa ${numeroCaixa}`)
-      unsubscribe()
-    }
-  }, [dataSelecionada, numeroCaixa])
-
-  // Funções de fallback para localStorage
-  const carregarMovimentacaoesLocal = () => {
-    try {
-      const keyMovs = `movimentacoes_${dataSelecionada}_${numeroCaixa}`
-      const movsData = localStorage.getItem(keyMovs)
-      if (movsData) {
-        setMovimentacoes(JSON.parse(movsData))
-      } else {
-        setMovimentacoes([])
-      }
-    } catch (error) {
-      console.error('Erro ao carregar movimentações do localStorage:', error)
-      setMovimentacoes([])
-    }
-  }
-
-  const carregarDadosCaixaLocal = () => {
-    try {
-      const keyCaixa = `caixa_${dataSelecionada}_${numeroCaixa}`
-      const caixaData = localStorage.getItem(keyCaixa)
-      if (caixaData) {
-        const dados = JSON.parse(caixaData)
-        setDadosCaixa(dados)
-        setTrocoInicial(dados.trocoInicial || '')
-        setValorMaquina(dados.valorMaquina || '')
-      } else {
-        setDadosCaixa({
-          trocoInicial: 0,
-          valorMaquina: 0,
-          fechado: false
-        })
-      }
-    } catch (error) {
-      console.error('Erro ao carregar dados do caixa do localStorage:', error)
-    }
-  }
+    setMovimentacoes(movimentacoesCarregadas)
+    setDadosCaixa(dadosCarregados)
+  }, [numero, dataSelecionada])
 
   // Calcular totais
-  const calcularTotais = () => {
-    const suprimentos = movimentacoes
-      .filter(m => m.tipo === 'suprimento')
-      .reduce((acc, m) => acc + (m.valor || 0), 0)
+  const totalSuprimentos = movimentacoes
+    .filter(m => m.tipo === 'suprimento')
+    .reduce((total, m) => total + m.valor, 0)
     
-    const sangrias = movimentacoes
-      .filter(m => m.tipo === 'sangria')
-      .reduce((acc, m) => acc + (m.valor || 0), 0)
+  const totalSangrias = movimentacoes
+    .filter(m => m.tipo === 'sangria')
+    .reduce((total, m) => total + m.valor, 0)
     
-    const valorEsperado = dadosCaixa.trocoInicial + suprimentos - sangrias
-    const divergencia = dadosCaixa.valorMaquina - valorEsperado
-    
-    return {
-      trocoInicial: dadosCaixa.trocoInicial,
-      suprimentos,
-      sangrias,
-      valorEsperado,
-      valorMaquina: dadosCaixa.valorMaquina,
-      divergencia,
-      temDivergencia: Math.abs(divergencia) > 0.01,
-      fechado: dadosCaixa.fechado
-    }
-  }
+  const valorEsperado = dadosCaixa.trocoInicial + totalSuprimentos - totalSangrias
+  const divergencia = dadosCaixa.valorMaquina - valorEsperado
 
-  const totais = calcularTotais()
-
-  // ========================================
-  // 📝 HANDLERS COM SINCRONIZAÇÃO
-  // ========================================
-
-  const handleAtualizarTrocoInicial = async () => {
-    if (!trocoInicial || parseFloat(trocoInicial) < 0) {
-      alert('Por favor, insira um valor válido para o troco inicial')
+  // Adicionar suprimento
+  const adicionarSuprimento = () => {
+    const valor = parseFloat(novoSuprimento.valor)
+    if (!valor || valor <= 0) {
+      alert('Digite um valor válido para o suprimento')
       return
     }
 
-    setSincronizando(true)
-    const novosDados = { ...dadosCaixa, trocoInicial: parseFloat(trocoInicial) }
-    
-    // Salvar no Firebase
-    const sucesso = await salvarDadosCaixaFirebase(novosDados, dataSelecionada, numeroCaixa)
-    
-    if (!sucesso) {
-      // Fallback para localStorage se Firebase falhar
-      const keyCaixa = `caixa_${dataSelecionada}_${numeroCaixa}`
-      localStorage.setItem(keyCaixa, JSON.stringify(novosDados))
-      setDadosCaixa(novosDados)
-    }
-    
-    setSincronizando(false)
-    alert('Troco inicial atualizado com sucesso!')
-  }
-
-  const handleAtualizarValorMaquina = async () => {
-    if (!valorMaquina || parseFloat(valorMaquina) < 0) {
-      alert('Por favor, insira um valor válido para o valor da máquina')
-      return
-    }
-
-    setSincronizando(true)
-    const novosDados = { ...dadosCaixa, valorMaquina: parseFloat(valorMaquina) }
-    
-    // Salvar no Firebase
-    const sucesso = await salvarDadosCaixaFirebase(novosDados, dataSelecionada, numeroCaixa)
-    
-    if (!sucesso) {
-      // Fallback para localStorage se Firebase falhar
-      const keyCaixa = `caixa_${dataSelecionada}_${numeroCaixa}`
-      localStorage.setItem(keyCaixa, JSON.stringify(novosDados))
-      setDadosCaixa(novosDados)
-    }
-    
-    setSincronizando(false)
-    alert('Valor da máquina atualizado com sucesso!')
-  }
-
-  const handleAdicionarSuprimento = async () => {
-    if (!valorSuprimento || parseFloat(valorSuprimento) <= 0) {
-      alert('Por favor, insira um valor válido para o suprimento')
-      return
-    }
-
-    setSincronizando(true)
     const novaMovimentacao = {
-      id: Date.now().toString(),
+      id: Date.now(),
       tipo: 'suprimento',
-      valor: parseFloat(valorSuprimento),
-      observacao: obsSuprimento || 'Suprimento',
-      criadoEm: new Date().toISOString(),
-      criadoPor: dadosUsuario.nome
+      valor: valor,
+      observacao: novoSuprimento.observacao || 'Suprimento',
+      criadoPor: dadosUsuario.nome,
+      criadoEm: new Date().toISOString()
     }
 
-    // Salvar no Firebase
-    const sucesso = await salvarMovimentacaoFirebase(novaMovimentacao, dataSelecionada, numeroCaixa)
+    const novasMovimentacoes = [...movimentacoes, novaMovimentacao]
+    setMovimentacoes(novasMovimentacoes)
     
-    if (!sucesso) {
-      // Fallback para localStorage se Firebase falhar
-      const novasMovs = [...movimentacoes, novaMovimentacao]
-      const keyMovs = `movimentacoes_${dataSelecionada}_${numeroCaixa}`
-      localStorage.setItem(keyMovs, JSON.stringify(novasMovs))
-      setMovimentacoes(novasMovs)
-    }
+    // Salvar no localStorage
+    const chaveMovimentacoes = `movimentacoes_caixa_${numero}_${dataSelecionada}`
+    salvarDados(chaveMovimentacoes, novasMovimentacoes)
     
-    setValorSuprimento('')
-    setObsSuprimento('')
-    setSincronizando(false)
+    // Limpar formulário
+    setNovoSuprimento({ valor: '', observacao: '' })
+    
     alert('Suprimento adicionado com sucesso!')
   }
 
-  const handleAdicionarSangria = async () => {
-    if (!valorSangria || parseFloat(valorSangria) <= 0) {
-      alert('Por favor, insira um valor válido para a sangria')
+  // Adicionar sangria
+  const adicionarSangria = () => {
+    const valor = parseFloat(novaSangria.valor)
+    if (!valor || valor <= 0) {
+      alert('Digite um valor válido para a sangria')
       return
     }
 
-    setSincronizando(true)
     const novaMovimentacao = {
-      id: Date.now().toString(),
+      id: Date.now(),
       tipo: 'sangria',
-      valor: parseFloat(valorSangria),
-      observacao: obsSangria || 'Sangria',
-      criadoEm: new Date().toISOString(),
-      criadoPor: dadosUsuario.nome
+      valor: valor,
+      observacao: novaSangria.observacao || 'Sangria',
+      criadoPor: dadosUsuario.nome,
+      criadoEm: new Date().toISOString()
     }
 
-    // Salvar no Firebase
-    const sucesso = await salvarMovimentacaoFirebase(novaMovimentacao, dataSelecionada, numeroCaixa)
+    const novasMovimentacoes = [...movimentacoes, novaMovimentacao]
+    setMovimentacoes(novasMovimentacoes)
     
-    if (!sucesso) {
-      // Fallback para localStorage se Firebase falhar
-      const novasMovs = [...movimentacoes, novaMovimentacao]
-      const keyMovs = `movimentacoes_${dataSelecionada}_${numeroCaixa}`
-      localStorage.setItem(keyMovs, JSON.stringify(novasMovs))
-      setMovimentacoes(novasMovs)
-    }
+    // Salvar no localStorage
+    const chaveMovimentacoes = `movimentacoes_caixa_${numero}_${dataSelecionada}`
+    salvarDados(chaveMovimentacoes, novasMovimentacoes)
     
-    setValorSangria('')
-    setObsSangria('')
-    setSincronizando(false)
+    // Limpar formulário
+    setNovaSangria({ valor: '', observacao: '' })
+    
     alert('Sangria adicionada com sucesso!')
   }
 
-  const handleFecharCaixa = async () => {
-    if (!dadosCaixa.valorMaquina || dadosCaixa.valorMaquina === 0) {
-      alert('Por favor, defina o valor da máquina antes de fechar o caixa')
+  // Definir troco inicial (apenas admin)
+  const definirTrocoInicial = () => {
+    const valor = parseFloat(novoTroco)
+    if (isNaN(valor) || valor < 0) {
+      alert('Digite um valor válido para o troco inicial')
       return
     }
 
-    if (window.confirm('Tem certeza que deseja fechar este caixa? Esta ação não pode ser desfeita.')) {
-      setSincronizando(true)
-      const novosDados = { 
-        ...dadosCaixa,
-        fechado: true,
-        fechadoPor: dadosUsuario.nome,
-        fechadoEm: new Date().toISOString()
-      }
-      
-      // Salvar no Firebase
-      const sucesso = await salvarDadosCaixaFirebase(novosDados, dataSelecionada, numeroCaixa)
-      
-      if (!sucesso) {
-        // Fallback para localStorage se Firebase falhar
-        const keyCaixa = `caixa_${dataSelecionada}_${numeroCaixa}`
-        localStorage.setItem(keyCaixa, JSON.stringify(novosDados))
-        setDadosCaixa(novosDados)
-      }
-      
-      setSincronizando(false)
-      alert('Caixa fechado com sucesso!')
-    }
+    const novosDados = { ...dadosCaixa, trocoInicial: valor }
+    setDadosCaixa(novosDados)
+    
+    const chaveDados = `dados_caixa_${numero}_${dataSelecionada}`
+    salvarDados(chaveDados, novosDados)
+    
+    setNovoTroco('')
+    alert('Troco inicial definido com sucesso!')
   }
 
-  const handleExcluirMovimentacao = async (movimentacao) => {
-    const senha = prompt('Digite a senha de confirmação para excluir:')
-    if (senha === 'matilde') {
-      setSincronizando(true)
-      
-      // Excluir do Firebase
-      const sucesso = await excluirMovimentacaoFirebase(movimentacao.id)
-      
-      if (!sucesso) {
-        // Fallback para localStorage se Firebase falhar
-        const novasMovs = movimentacoes.filter(m => m.id !== movimentacao.id)
-        const keyMovs = `movimentacoes_${dataSelecionada}_${numeroCaixa}`
-        localStorage.setItem(keyMovs, JSON.stringify(novasMovs))
-        setMovimentacoes(novasMovs)
-      }
-      
-      setSincronizando(false)
-      alert('Movimentação excluída com sucesso!')
-    } else {
-      alert('Senha incorreta!')
+  // Definir valor da máquina (apenas admin)
+  const definirValorMaquina = () => {
+    const valor = parseFloat(novoValorMaquina)
+    if (isNaN(valor) || valor < 0) {
+      alert('Digite um valor válido para o valor da máquina')
+      return
     }
+
+    const novosDados = { ...dadosCaixa, valorMaquina: valor }
+    setDadosCaixa(novosDados)
+    
+    const chaveDados = `dados_caixa_${numero}_${dataSelecionada}`
+    salvarDados(chaveDados, novosDados)
+    
+    setNovoValorMaquina('')
+    alert('Valor da máquina definido com sucesso!')
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header do Caixa */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-gray-800">💰 Gestão do Caixa {numeroCaixa}</h2>
-          <div className="text-right">
-            <p className="text-sm text-gray-600">Data: {new Date(dataSelecionada).toLocaleDateString('pt-BR')}</p>
-            <p className={`font-semibold ${totais.fechado ? 'text-green-600' : 'text-orange-600'}`}>
-              {totais.fechado ? '✅ Fechado' : '⏳ Aberto'}
-            </p>
-            {sincronizando && (
-              <p className="text-sm text-blue-600 animate-pulse">🔄 Sincronizando...</p>
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">💰 Gestão do Caixa {numero}</h2>
+        <div className="text-right">
+          <p className="text-sm text-gray-600">Data: {dataSelecionada}</p>
+          <span className={`px-3 py-1 rounded-full text-sm ${
+            dadosCaixa.fechado ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+          }`}>
+            {dadosCaixa.fechado ? '🔒 Fechado' : '🔓 Aberto'}
+          </span>
+        </div>
+      </div>
+
+      {/* Resumo Financeiro */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="bg-blue-50 p-4 rounded-lg">
+          <h3 className="font-semibold text-blue-800">Troco Inicial</h3>
+          <p className="text-2xl font-bold text-blue-600">{formatarMoeda(dadosCaixa.trocoInicial)}</p>
+        </div>
+        
+        <div className="bg-green-50 p-4 rounded-lg">
+          <h3 className="font-semibold text-green-800">Suprimentos</h3>
+          <p className="text-2xl font-bold text-green-600">{formatarMoeda(totalSuprimentos)}</p>
+        </div>
+        
+        <div className="bg-red-50 p-4 rounded-lg">
+          <h3 className="font-semibold text-red-800">Sangrias</h3>
+          <p className="text-2xl font-bold text-red-600">{formatarMoeda(totalSangrias)}</p>
+        </div>
+        
+        <div className="bg-purple-50 p-4 rounded-lg">
+          <h3 className="font-semibold text-purple-800">Valor Esperado</h3>
+          <p className="text-2xl font-bold text-purple-600">{formatarMoeda(valorEsperado)}</p>
+        </div>
+      </div>
+
+      {/* Configurações (apenas admin) */}
+      {dadosUsuario.tipo === 'admin' && (
+        <div className="grid grid-cols-2 gap-6 mb-6">
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="font-semibold mb-3">⚙️ Configurar Troco Inicial</h3>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={novoTroco}
+                onChange={(e) => setNovoTroco(e.target.value)}
+                placeholder="Valor do troco inicial (R$)"
+                className="flex-1 p-2 border rounded"
+              />
+              <button
+                onClick={definirTrocoInicial}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Definir
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="font-semibold mb-3">🖥️ Valor da Máquina</h3>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={novoValorMaquina}
+                onChange={(e) => setNovoValorMaquina(e.target.value)}
+                placeholder="Valor final da máquina (R$)"
+                className="flex-1 p-2 border rounded"
+              />
+              <button
+                onClick={definirValorMaquina}
+                className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+              >
+                Definir
+              </button>
+            </div>
+            {dadosCaixa.valorMaquina > 0 && (
+              <div className={`mt-2 p-2 rounded ${
+                Math.abs(divergencia) < 0.01 
+                  ? 'bg-green-100 text-green-800' 
+                  : 'bg-red-100 text-red-800'
+              }`}>
+                <p className="text-sm">
+                  Valor da máquina: {formatarMoeda(dadosCaixa.valorMaquina)}
+                </p>
+                <p className="text-sm">
+                  Divergência: {formatarMoeda(divergencia)}
+                </p>
+              </div>
             )}
           </div>
         </div>
+      )}
 
-        {/* Resumo Financeiro */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-blue-800">Troco Inicial</h3>
-            <p className="text-xl font-bold text-blue-600">{formatarMoeda(totais.trocoInicial)}</p>
-          </div>
-          <div className="bg-green-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-green-800">Suprimentos</h3>
-            <p className="text-xl font-bold text-green-600">{formatarMoeda(totais.suprimentos)}</p>
-          </div>
-          <div className="bg-red-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-red-800">Sangrias</h3>
-            <p className="text-xl font-bold text-red-600">{formatarMoeda(totais.sangrias)}</p>
-          </div>
-          <div className="bg-purple-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-purple-800">Valor Esperado</h3>
-            <p className="text-xl font-bold text-purple-600">{formatarMoeda(totais.valorEsperado)}</p>
+      {/* Formulários de Movimentação */}
+      <div className="grid grid-cols-2 gap-6 mb-6">
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-semibold text-green-800 mb-3">➕ Adicionar Suprimento</h3>
+          <div className="space-y-3">
+            <input
+              type="number"
+              value={novoSuprimento.valor}
+              onChange={(e) => setNovoSuprimento({...novoSuprimento, valor: e.target.value})}
+              placeholder="Valor (R$)"
+              className="w-full p-2 border rounded"
+            />
+            <input
+              type="text"
+              value={novoSuprimento.observacao}
+              onChange={(e) => setNovoSuprimento({...novoSuprimento, observacao: e.target.value})}
+              placeholder="Observação (opcional)"
+              className="w-full p-2 border rounded"
+            />
+            <button
+              onClick={adicionarSuprimento}
+              className="w-full py-2 bg-green-500 text-white rounded hover:bg-green-600"
+            >
+              Adicionar Suprimento
+            </button>
           </div>
         </div>
 
-        {/* Configurações do Caixa - APENAS PARA ADMINS */}
-        {isAdmin && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-800 mb-3">⚙️ Configurar Troco Inicial</h3>
-              <div className="flex gap-2">
-                <input 
-                  type="number" 
-                  step="0.01"
-                  placeholder="Valor do troco inicial (R$)" 
-                  value={trocoInicial}
-                  onChange={(e) => setTrocoInicial(e.target.value)}
-                  className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                  disabled={totais.fechado || sincronizando}
-                />
-                <button 
-                  onClick={handleAtualizarTrocoInicial}
-                  disabled={totais.fechado || sincronizando}
-                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors disabled:bg-gray-400"
-                >
-                  {sincronizando ? '🔄' : 'Definir'}
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-800 mb-3">🖥️ Valor da Máquina</h3>
-              <div className="flex gap-2">
-                <input 
-                  type="number" 
-                  step="0.01"
-                  placeholder="Valor final da máquina (R$)" 
-                  value={valorMaquina}
-                  onChange={(e) => setValorMaquina(e.target.value)}
-                  className="flex-1 p-2 border rounded focus:ring-2 focus:ring-gray-500"
-                  disabled={totais.fechado || sincronizando}
-                />
-                <button 
-                  onClick={handleAtualizarValorMaquina}
-                  disabled={totais.fechado || sincronizando}
-                  className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors disabled:bg-gray-400"
-                >
-                  {sincronizando ? '🔄' : 'Definir'}
-                </button>
-              </div>
-            </div>
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-semibold text-red-800 mb-3">➖ Adicionar Sangria</h3>
+          <div className="space-y-3">
+            <input
+              type="number"
+              value={novaSangria.valor}
+              onChange={(e) => setNovaSangria({...novaSangria, valor: e.target.value})}
+              placeholder="Valor (R$)"
+              className="w-full p-2 border rounded"
+            />
+            <input
+              type="text"
+              value={novaSangria.observacao}
+              onChange={(e) => setNovaSangria({...novaSangria, observacao: e.target.value})}
+              placeholder="Observação (opcional)"
+              className="w-full p-2 border rounded"
+            />
+            <button
+              onClick={adicionarSangria}
+              className="w-full py-2 bg-red-500 text-white rounded hover:bg-red-600"
+            >
+              Adicionar Sangria
+            </button>
           </div>
-        )}
-
-        {/* Divergência */}
-        {dadosCaixa.valorMaquina > 0 && totais.temDivergencia && (
-          <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mb-6">
-            <h4 className="font-semibold text-yellow-800">⚠️ Divergência Detectada</h4>
-            <p className="text-yellow-700">
-              Diferença entre valor esperado e valor da máquina: {formatarMoeda(totais.divergencia)}
-            </p>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* Operações */}
-      {!totais.fechado && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Suprimento */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="text-lg font-semibold mb-4 text-green-700">➕ Adicionar Suprimento</h3>
-            <div className="space-y-3">
-              <input 
-                type="number" 
-                step="0.01"
-                placeholder="Valor (R$)" 
-                value={valorSuprimento}
-                onChange={(e) => setValorSuprimento(e.target.value)}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500"
-                disabled={sincronizando}
-              />
-              <input 
-                type="text" 
-                placeholder="Observação (opcional)" 
-                value={obsSuprimento}
-                onChange={(e) => setObsSuprimento(e.target.value)}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500"
-                disabled={sincronizando}
-              />
-              <button 
-                onClick={handleAdicionarSuprimento}
-                disabled={sincronizando}
-                className="w-full bg-green-600 text-white p-3 rounded-lg hover:bg-green-700 transition-colors font-semibold disabled:bg-gray-400"
-              >
-                {sincronizando ? '🔄 Sincronizando...' : 'Adicionar Suprimento'}
-              </button>
-            </div>
-          </div>
-
-          {/* Sangria */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="text-lg font-semibold mb-4 text-red-700">➖ Adicionar Sangria</h3>
-            <div className="space-y-3">
-              <input 
-                type="number" 
-                step="0.01"
-                placeholder="Valor (R$)" 
-                value={valorSangria}
-                onChange={(e) => setValorSangria(e.target.value)}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500"
-                disabled={sincronizando}
-              />
-              <input 
-                type="text" 
-                placeholder="Observação (opcional)" 
-                value={obsSangria}
-                onChange={(e) => setObsSangria(e.target.value)}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500"
-                disabled={sincronizando}
-              />
-              <button 
-                onClick={handleAdicionarSangria}
-                disabled={sincronizando}
-                className="w-full bg-red-600 text-white p-3 rounded-lg hover:bg-red-700 transition-colors font-semibold disabled:bg-gray-400"
-              >
-                {sincronizando ? '🔄 Sincronizando...' : 'Adicionar Sangria'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Fechamento do Caixa - APENAS PARA ADMINS */}
-      {isAdmin && !totais.fechado && dadosCaixa.valorMaquina > 0 && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold mb-4 text-teal-700">🔒 Fechamento do Caixa</h3>
-          <button 
-            onClick={handleFecharCaixa}
-            disabled={sincronizando}
-            className="bg-teal-600 text-white p-3 rounded-lg hover:bg-teal-700 transition-colors font-semibold disabled:bg-gray-400"
-          >
-            {sincronizando ? '🔄 Sincronizando...' : 'Fechar Caixa'}
-          </button>
-        </div>
-      )}
-
       {/* Histórico de Movimentações */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold mb-4">📋 Histórico de Movimentações</h3>
+      <div className="bg-white p-4 rounded-lg shadow">
+        <h3 className="font-semibold mb-3">📋 Histórico de Movimentações</h3>
         {movimentacoes.length === 0 ? (
           <p className="text-gray-500 text-center py-4">Nenhuma movimentação registrada</p>
         ) : (
-          <div className="space-y-2 max-h-60 overflow-y-auto">
+          <div className="space-y-2">
             {movimentacoes.map(mov => (
-              <div key={mov.id} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                <div>
-                  <span className={`font-semibold ${
-                    mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {mov.tipo === 'suprimento' ? '➕' : '➖'} 
-                    {mov.tipo.charAt(0).toUpperCase() + mov.tipo.slice(1)}
-                  </span>
-                  <p className="text-sm text-gray-600">{mov.observacao}</p>
-                  <p className="text-xs text-gray-500">
-                    {formatarDataHora(mov.criadoEm)} - {mov.criadoPor}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`font-bold ${
-                    mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {formatarMoeda(mov.valor)}
-                  </span>
-                  {isAdmin && (
-                    <button
-                      onClick={() => handleExcluirMovimentacao(mov)}
-                      disabled={sincronizando}
-                      className="text-red-500 hover:text-red-700 text-sm disabled:text-gray-400"
-                      title="Excluir movimentação"
-                    >
-                      🗑️
-                    </button>
-                  )}
+              <div key={mov.id} className={`p-3 rounded border-l-4 ${
+                mov.tipo === 'suprimento' ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'
+              }`}>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className={`font-semibold ${
+                      mov.tipo === 'suprimento' ? 'text-green-800' : 'text-red-800'
+                    }`}>
+                      {mov.tipo === 'suprimento' ? '➕ Suprimento' : '➖ Sangria'}: {formatarMoeda(mov.valor)}
+                    </span>
+                    {mov.observacao && (
+                      <p className="text-sm text-gray-600">{mov.observacao}</p>
+                    )}
+                  </div>
+                  <div className="text-right text-sm text-gray-500">
+                    <p>{formatarDataHora(mov.criadoEm)}</p>
+                    <p>por {mov.criadoPor}</p>
+                  </div>
                 </div>
               </div>
             ))}
@@ -733,489 +508,94 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
   )
 }
 
-// Componente Caixa Central
-function CaixaCentral({ dataSelecionada }) {
-  const [dadosCentral, setDadosCentral] = useState({
-    valorInicial: 0,
-    valorCarroForte: 0,
-    valorFinal: 0
+// Componente Resumo Geral
+function ResumoGeral({ dataSelecionada }) {
+  const [resumo, setResumo] = useState({
+    totalSuprimentos: 0,
+    totalSangrias: 0,
+    caixasFechados: 0
   })
-  
-  const [valorInicial, setValorInicial] = useState('')
-  const [sincronizando, setSincronizando] = useState(false)
 
-  // Listener para dados do caixa central em tempo real
   useEffect(() => {
-    console.log(`🔄 Configurando listener para caixa central - Data: ${dataSelecionada}`)
-    
-    const docId = `${dataSelecionada}_central`
-    const unsubscribe = onSnapshot(doc(db, 'caixa_central', docId), (doc) => {
-      if (doc.exists()) {
-        const dados = doc.data()
-        console.log('📦 Dados do caixa central recebidos do Firebase:', dados)
-        setDadosCentral(dados)
-        setValorInicial(dados.valorInicial || '')
-        
-        // Salvar no localStorage como backup
-        const key = `caixa_central_${dataSelecionada}`
-        localStorage.setItem(key, JSON.stringify(dados))
-      } else {
-        console.log('📦 Nenhum dado encontrado no Firebase para caixa central, carregando do localStorage')
-        carregarDadosLocal()
-      }
-    }, (error) => {
-      console.error('❌ Erro no listener do caixa central:', error)
-      // Fallback para localStorage
-      carregarDadosLocal()
-    })
-
-    return () => {
-      console.log('🔄 Desconectando listener caixa central')
-      unsubscribe()
-    }
-  }, [dataSelecionada])
-
-  const carregarDadosLocal = () => {
-    try {
-      const key = `caixa_central_${dataSelecionada}`
-      const data = localStorage.getItem(key)
-      if (data) {
-        const dados = JSON.parse(data)
-        setDadosCentral(dados)
-        setValorInicial(dados.valorInicial || '')
-      }
-    } catch (error) {
-      console.error('Erro ao carregar dados do caixa central do localStorage:', error)
-    }
-  }
-
-  const handleAtualizarValorInicial = async () => {
-    if (!valorInicial || parseFloat(valorInicial) < 0) {
-      alert('Por favor, insira um valor válido')
-      return
-    }
-
-    setSincronizando(true)
-    const novosDados = { ...dadosCentral, valorInicial: parseFloat(valorInicial) }
-    
-    // Salvar no Firebase
-    const sucesso = await salvarDadosCentralFirebase(novosDados, dataSelecionada)
-    
-    if (!sucesso) {
-      // Fallback para localStorage se Firebase falhar
-      const key = `caixa_central_${dataSelecionada}`
-      localStorage.setItem(key, JSON.stringify(novosDados))
-      setDadosCentral(novosDados)
-    }
-    
-    setSincronizando(false)
-    alert('Valor inicial atualizado com sucesso!')
-  }
-
-  // Calcular totais gerais em tempo real
-  const calcularTotaisGerais = () => {
-    let totalSuprimentos = 0
-    let totalSangrias = 0
-
-    for (let i = 1; i <= 6; i++) {
-      try {
-        const key = `movimentacoes_${dataSelecionada}_${i}`
-        const data = localStorage.getItem(key)
-        if (data) {
-          const movs = JSON.parse(data)
-          totalSuprimentos += movs.filter(m => m.tipo === 'suprimento').reduce((acc, m) => acc + (m.valor || 0), 0)
-          totalSangrias += movs.filter(m => m.tipo === 'sangria').reduce((acc, m) => acc + (m.valor || 0), 0)
-        }
-      } catch (error) {
-        console.error(`Erro ao calcular totais do caixa ${i}:`, error)
-      }
-    }
-
-    return { totalSuprimentos, totalSangrias }
-  }
-
-  const totaisGerais = calcularTotaisGerais()
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-gray-800">
-            🏢 Caixa Central - {new Date(dataSelecionada).toLocaleDateString('pt-BR')}
-          </h2>
-          {sincronizando && (
-            <p className="text-sm text-blue-600 animate-pulse">🔄 Sincronizando...</p>
-          )}
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div className="bg-green-50 p-4 rounded-lg">
-            <h4 className="font-semibold text-green-800">Total Suprimentos Enviados</h4>
-            <p className="text-xl font-bold text-green-600">{formatarMoeda(totaisGerais.totalSuprimentos)}</p>
-          </div>
-          <div className="bg-red-50 p-4 rounded-lg">
-            <h4 className="font-semibold text-red-800">Total Sangrias Recebidas</h4>
-            <p className="text-xl font-bold text-red-600">{formatarMoeda(totaisGerais.totalSangrias)}</p>
-          </div>
-        </div>
-
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h3 className="font-semibold text-gray-800 mb-3">💰 Valor Inicial do Dia</h3>
-          <div className="flex gap-2">
-            <input 
-              type="number" 
-              step="0.01"
-              placeholder="Valor inicial (R$)" 
-              value={valorInicial}
-              onChange={(e) => setValorInicial(e.target.value)}
-              className="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              disabled={sincronizando}
-            />
-            <button 
-              onClick={handleAtualizarValorInicial}
-              disabled={sincronizando}
-              className="bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400"
-            >
-              {sincronizando ? '🔄' : 'Definir'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Componente Relatório (mantém a mesma estrutura)
-function Relatorio({ dataSelecionada }) {
-  const imprimirRelatorio = () => {
-    window.print()
-  }
-
-  // Calcular dados para o relatório
-  const calcularDadosRelatorio = () => {
-    const dadosCaixas = []
-
-    for (let i = 1; i <= 6; i++) {
-      try {
-        // Carregar movimentações
-        const keyMovs = `movimentacoes_${dataSelecionada}_${i}`
-        const movsData = localStorage.getItem(keyMovs)
-        const movimentacoes = movsData ? JSON.parse(movsData) : []
-
-        // Carregar dados do caixa
-        const keyCaixa = `caixa_${dataSelecionada}_${i}`
-        const caixaData = localStorage.getItem(keyCaixa)
-        const dadosCaixa = caixaData ? JSON.parse(caixaData) : { trocoInicial: 0, valorMaquina: 0, fechado: false }
-
-        // Calcular totais
-        const suprimentos = movimentacoes.filter(m => m.tipo === 'suprimento').reduce((acc, m) => acc + (m.valor || 0), 0)
-        const sangrias = movimentacoes.filter(m => m.tipo === 'sangria').reduce((acc, m) => acc + (m.valor || 0), 0)
-        const valorEsperado = dadosCaixa.trocoInicial + suprimentos - sangrias
-        const divergencia = dadosCaixa.valorMaquina - valorEsperado
-
-        dadosCaixas.push({
-          numero: i,
-          trocoInicial: dadosCaixa.trocoInicial,
-          suprimentos,
-          sangrias,
-          valorEsperado,
-          valorMaquina: dadosCaixa.valorMaquina,
-          divergencia,
-          temDivergencia: Math.abs(divergencia) > 0.01,
-          fechado: dadosCaixa.fechado,
-          movimentacoes
-        })
-      } catch (error) {
-        console.error(`Erro ao calcular dados do caixa ${i}:`, error)
-      }
-    }
-
-    return dadosCaixas
-  }
-
-  const dadosRelatorio = calcularDadosRelatorio()
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">📄 Relatório Diário</h1>
-            <p className="text-lg text-gray-600">Loteria Imperatriz - Sistema Sincronizado</p>
-            <p className="text-sm text-gray-500">Data: {new Date(dataSelecionada).toLocaleDateString('pt-BR')}</p>
-          </div>
-          <button
-            onClick={imprimirRelatorio}
-            className="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700 transition-colors print:hidden"
-          >
-            🖨️ Imprimir
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          {dadosRelatorio.map(caixa => (
-            <div key={caixa.numero} className="border p-4 rounded">
-              <h3 className="text-lg font-bold text-gray-800 mb-2">💰 Caixa {caixa.numero}</h3>
-              
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2 text-sm">
-                <div>
-                  <span className="font-semibold">Troco Inicial:</span>
-                  <p className="text-blue-600 font-bold">{formatarMoeda(caixa.trocoInicial)}</p>
-                </div>
-                <div>
-                  <span className="font-semibold">Suprimentos:</span>
-                  <p className="text-green-600 font-bold">{formatarMoeda(caixa.suprimentos)}</p>
-                </div>
-                <div>
-                  <span className="font-semibold">Sangrias:</span>
-                  <p className="text-red-600 font-bold">{formatarMoeda(caixa.sangrias)}</p>
-                </div>
-                <div>
-                  <span className="font-semibold">Valor Esperado:</span>
-                  <p className="text-purple-600 font-bold">{formatarMoeda(caixa.valorEsperado)}</p>
-                </div>
-                <div>
-                  <span className="font-semibold">Valor Máquina:</span>
-                  <p className={`font-bold ${caixa.temDivergencia ? 'text-red-600' : 'text-green-600'}`}>
-                    {formatarMoeda(caixa.valorMaquina)}
-                    {caixa.temDivergencia && <span className="text-xs block">⚠️ Divergência: {formatarMoeda(caixa.divergencia)}</span>}
-                  </p>
-                </div>
-              </div>
-
-              {caixa.movimentacoes.length > 0 && (
-                <div>
-                  <h4 className="font-semibold mb-1 text-sm">Movimentações:</h4>
-                  <div className="space-y-1">
-                    {caixa.movimentacoes.map(mov => (
-                      <div key={mov.id} className="flex justify-between items-center text-xs p-2 bg-gray-50 rounded">
-                        <div>
-                          <span className={`font-semibold ${
-                            mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {mov.tipo.charAt(0).toUpperCase() + mov.tipo.slice(1)}
-                          </span>
-                          {mov.observacao && <span className="text-gray-600"> - {mov.observacao}</span>}
-                          <span className="text-gray-500 block">{formatarDataHora(mov.criadoEm)} - {mov.criadoPor}</span>
-                        </div>
-                        <span className={`font-bold ${
-                          mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {formatarMoeda(mov.valor)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Dashboard para Administradores
-function DashboardAdmin({ dadosUsuario }) {
-  const [telaAtiva, setTelaAtiva] = useState('resumo')
-  const [dataSelecionada, setDataSelecionada] = useState(() => {
-    return new Date().toISOString().split('T')[0]
-  })
-
-  const calcularResumoGeral = () => {
+    // Calcular resumo de todos os caixas
     let totalSuprimentos = 0
     let totalSangrias = 0
     let caixasFechados = 0
 
     for (let i = 1; i <= 6; i++) {
-      try {
-        // Carregar movimentações
-        const keyMovs = `movimentacoes_${dataSelecionada}_${i}`
-        const movsData = localStorage.getItem(keyMovs)
-        const movimentacoes = movsData ? JSON.parse(movsData) : []
-
-        // Carregar dados do caixa
-        const keyCaixa = `caixa_${dataSelecionada}_${i}`
-        const caixaData = localStorage.getItem(keyCaixa)
-        const dadosCaixa = caixaData ? JSON.parse(caixaData) : { fechado: false }
-
-        totalSuprimentos += movimentacoes.filter(m => m.tipo === 'suprimento').reduce((acc, m) => acc + (m.valor || 0), 0)
-        totalSangrias += movimentacoes.filter(m => m.tipo === 'sangria').reduce((acc, m) => acc + (m.valor || 0), 0)
-        if (dadosCaixa.fechado) caixasFechados++
-      } catch (error) {
-        console.error(`Erro ao calcular resumo do caixa ${i}:`, error)
-      }
+      const chaveMovimentacoes = `movimentacoes_caixa_${i}_${dataSelecionada}`
+      const chaveDados = `dados_caixa_${i}_${dataSelecionada}`
+      
+      const movimentacoes = carregarDados(chaveMovimentacoes, [])
+      const dados = carregarDados(chaveDados, { fechado: false })
+      
+      totalSuprimentos += movimentacoes
+        .filter(m => m.tipo === 'suprimento')
+        .reduce((total, m) => total + m.valor, 0)
+        
+      totalSangrias += movimentacoes
+        .filter(m => m.tipo === 'sangria')
+        .reduce((total, m) => total + m.valor, 0)
+        
+      if (dados.fechado) caixasFechados++
     }
 
-    return {
-      totalSuprimentos,
-      totalSangrias,
-      caixasFechados,
-      percentualFechamento: (caixasFechados / 6) * 100
-    }
-  }
-
-  const resumoGeral = calcularResumoGeral()
-
-  const renderizarConteudo = () => {
-    if (telaAtiva === 'resumo') {
-      return (
-        <div className="space-y-6">
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">📊 Resumo Geral - Sistema Sincronizado</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="bg-green-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-green-800">Total Suprimentos</h3>
-                <p className="text-2xl font-bold text-green-600">{formatarMoeda(resumoGeral.totalSuprimentos)}</p>
-              </div>
-              <div className="bg-red-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-red-800">Total Sangrias</h3>
-                <p className="text-2xl font-bold text-red-600">{formatarMoeda(resumoGeral.totalSangrias)}</p>
-              </div>
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-blue-800">Progresso</h3>
-                <p className="text-2xl font-bold text-blue-600">{resumoGeral.caixasFechados}/6</p>
-                <p className="text-sm text-blue-600">{resumoGeral.percentualFechamento.toFixed(0)}% concluído</p>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h4 className="font-semibold text-blue-800 mb-2">🔄 Status da Sincronização</h4>
-              <p className="text-sm text-blue-700">
-                ✅ Sistema sincronizado em tempo real<br/>
-                ✅ Dados compartilhados entre todos os dispositivos<br/>
-                ✅ Backup automático no localStorage
-              </p>
-            </div>
-          </div>
-        </div>
-      )
-    }
-
-    if (telaAtiva.startsWith('caixa-')) {
-      const numeroCaixa = parseInt(telaAtiva.split('-')[1])
-      return <GestaCaixaIndividual numeroCaixa={numeroCaixa} dadosUsuario={dadosUsuario} dataSelecionada={dataSelecionada} />
-    }
-
-    if (telaAtiva === 'central') {
-      return <CaixaCentral dataSelecionada={dataSelecionada} />
-    }
-
-    if (telaAtiva === 'relatorio') {
-      return <Relatorio dataSelecionada={dataSelecionada} />
-    }
-
-    return <div>Tela não encontrada</div>
-  }
+    setResumo({ totalSuprimentos, totalSangrias, caixasFechados })
+  }, [dataSelecionada])
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header 
-        dadosUsuario={dadosUsuario}
-        dataSelecionada={dataSelecionada}
-        setDataSelecionada={setDataSelecionada}
-        onLogout={() => window.location.reload()}
-      />
+    <div className="p-6">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">📊 Resumo Geral - Sistema Simples</h2>
       
-      <nav className="bg-white shadow-md p-4">
-        <div className="flex flex-wrap gap-2">
-          {[
-            { id: 'resumo', nome: 'Resumo Geral', icon: '📊' },
-            { id: 'caixa-1', nome: 'Caixa 1', icon: '💰' },
-            { id: 'caixa-2', nome: 'Caixa 2', icon: '💰' },
-            { id: 'caixa-3', nome: 'Caixa 3', icon: '💰' },
-            { id: 'caixa-4', nome: 'Caixa 4', icon: '💰' },
-            { id: 'caixa-5', nome: 'Caixa 5', icon: '💰' },
-            { id: 'caixa-6', nome: 'Caixa 6', icon: '💰' },
-            { id: 'central', nome: 'Caixa Central', icon: '🏢' },
-            { id: 'relatorio', nome: 'Relatório', icon: '📄' }
-          ].map(opcao => (
-            <button
-              key={opcao.id}
-              onClick={() => setTelaAtiva(opcao.id)}
-              className={`px-4 py-2 rounded transition-colors flex items-center gap-2 ${
-                telaAtiva === opcao.id 
-                  ? 'bg-teal-600 text-white' 
-                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-              }`}
-            >
-              <span>{opcao.icon}</span>
-              <span>{opcao.nome}</span>
-            </button>
-          ))}
+      <div className="grid grid-cols-3 gap-6 mb-6">
+        <div className="bg-green-50 p-6 rounded-lg">
+          <h3 className="font-semibold text-green-800">Total Suprimentos</h3>
+          <p className="text-3xl font-bold text-green-600">{formatarMoeda(resumo.totalSuprimentos)}</p>
         </div>
-      </nav>
-
-      <main className="p-6">
-        {renderizarConteudo()}
-      </main>
-    </div>
-  )
-}
-
-// Dashboard para Operadores de Caixa
-function DashboardOperador({ dadosUsuario }) {
-  const [dataSelecionada] = useState(() => {
-    return new Date().toISOString().split('T')[0]
-  })
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <Header 
-        dadosUsuario={dadosUsuario}
-        dataSelecionada={dataSelecionada}
-        setDataSelecionada={() => {}} // Operadores não podem mudar data
-        onLogout={() => window.location.reload()}
-      />
-      
-      <main className="p-6">
-        <GestaCaixaIndividual 
-          numeroCaixa={dadosUsuario.caixa} 
-          dadosUsuario={dadosUsuario} 
-          dataSelecionada={dataSelecionada} 
-        />
-      </main>
-    </div>
-  )
-}
-
-// Componente principal da aplicação
-function AppContent() {
-  const { currentUser, loading, logout } = useAuth()
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando sistema sincronizado...</p>
+        
+        <div className="bg-red-50 p-6 rounded-lg">
+          <h3 className="font-semibold text-red-800">Total Sangrias</h3>
+          <p className="text-3xl font-bold text-red-600">{formatarMoeda(resumo.totalSangrias)}</p>
+        </div>
+        
+        <div className="bg-blue-50 p-6 rounded-lg">
+          <h3 className="font-semibold text-blue-800">Progresso</h3>
+          <p className="text-3xl font-bold text-blue-600">{resumo.caixasFechados}/6</p>
+          <p className="text-sm text-blue-600">{Math.round((resumo.caixasFechados/6)*100)}% concluído</p>
         </div>
       </div>
-    )
-  }
 
-  if (!currentUser) {
-    return <Login />
-  }
+      <div className="bg-blue-50 p-4 rounded-lg">
+        <h3 className="font-semibold text-blue-800 mb-2">📋 Status da Sincronização</h3>
+        <div className="space-y-1 text-sm">
+          <p>✅ Sistema funcionando localmente</p>
+          <p>✅ Dados salvos no navegador</p>
+          <p>✅ Backup automático no localStorage</p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
-  const dadosUsuario = obterDadosUsuario(currentUser.email)
-  
+// Componente Principal
+function AppContent() {
+  const { user, logout } = useAuth()
+  const [caixaAtivo, setCaixaAtivo] = useState('resumo')
+  const [dataSelecionada, setDataSelecionada] = useState(
+    new Date().toISOString().split('T')[0]
+  )
+
+  const dadosUsuario = obterDadosUsuario(user?.email)
+
   if (!dadosUsuario) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center bg-white p-8 rounded-lg shadow-md">
-          <h2 className="text-xl font-bold text-red-600 mb-4">Acesso Negado</h2>
-          <p className="text-gray-600 mb-4">
-            Seu email ({currentUser.email}) não está configurado no sistema.
-          </p>
-          <p className="text-sm text-gray-500 mb-4">
-            Entre em contato com o administrador para configurar seu acesso.
-          </p>
-          <button
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-red-600 mb-2">Acesso Negado</h2>
+          <p className="text-gray-600 mb-4">Usuário não autorizado: {user?.email}</p>
+          <button 
             onClick={logout}
-            className="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700"
+            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
           >
             Fazer Logout
           </button>
@@ -1224,14 +604,63 @@ function AppContent() {
     )
   }
 
+  // Se for operador, definir caixa automaticamente
+  useEffect(() => {
+    if (dadosUsuario.tipo === 'operador') {
+      setCaixaAtivo(`caixa-${dadosUsuario.caixa}`)
+    }
+  }, [dadosUsuario])
+
+  const renderizarConteudo = () => {
+    if (caixaAtivo === 'resumo') {
+      return <ResumoGeral dataSelecionada={dataSelecionada} />
+    } else if (caixaAtivo.startsWith('caixa-')) {
+      const numero = parseInt(caixaAtivo.replace('caixa-', ''))
+      return (
+        <CaixaIndividual 
+          numero={numero} 
+          dataSelecionada={dataSelecionada}
+          dadosUsuario={dadosUsuario}
+        />
+      )
+    } else if (caixaAtivo === 'central') {
+      return (
+        <div className="p-6">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">🏢 Caixa Central</h2>
+          <p className="text-gray-600">Funcionalidade em desenvolvimento...</p>
+        </div>
+      )
+    } else if (caixaAtivo === 'relatorio') {
+      return (
+        <div className="p-6">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">📄 Relatório</h2>
+          <p className="text-gray-600">Funcionalidade em desenvolvimento...</p>
+        </div>
+      )
+    }
+  }
+
   return (
-    <>
-      {dadosUsuario.tipo === 'admin' ? (
-        <DashboardAdmin dadosUsuario={dadosUsuario} />
-      ) : (
-        <DashboardOperador dadosUsuario={dadosUsuario} />
-      )}
-    </>
+    <div className="min-h-screen bg-gray-50">
+      <Header 
+        onLogout={logout}
+        dadosUsuario={dadosUsuario}
+        dataSelecionada={dataSelecionada}
+        setDataSelecionada={setDataSelecionada}
+      />
+      
+      <div className="flex">
+        <Sidebar 
+          caixaAtivo={caixaAtivo}
+          setCaixaAtivo={setCaixaAtivo}
+          dadosUsuario={dadosUsuario}
+        />
+        
+        <main className="flex-1">
+          {renderizarConteudo()}
+        </main>
+      </div>
+    </div>
   )
 }
 
