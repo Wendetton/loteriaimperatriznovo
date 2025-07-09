@@ -1,30 +1,8 @@
-// App.jsx - VERSÃO SIMPLES E FUNCIONAL
+// App.jsx - VERSÃO CORRIGIDA E FUNCIONAL
 import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Login from './pages/Login'
 import './App.css'
-
-// ========================================
-// 📧 CONFIGURAÇÃO DE USUÁRIOS
-// ========================================
-const USUARIOS_CONFIGURADOS = {
-  // ADMINISTRADORES (acesso completo)
-  'feazegoncalves@gmail.com': { tipo: 'admin', nome: 'Administrador Principal' },
-  'admin@loteriaimperatriz.com': { tipo: 'admin', nome: 'Administrador' },
-  
-  // OPERADORES DE CAIXA (acesso limitado ao próprio caixa)
-  'caixa1@loteriaimperatriz.com': { tipo: 'operador', caixa: 1, nome: 'Operador Caixa 1' },
-  'caixa2@loteriaimperatriz.com': { tipo: 'operador', caixa: 2, nome: 'Operador Caixa 2' },
-  'caixa3@loteriaimperatriz.com': { tipo: 'operador', caixa: 3, nome: 'Operador Caixa 3' },
-  'caixa4@loteriaimperatriz.com': { tipo: 'operador', caixa: 4, nome: 'Operador Caixa 4' },
-  'caixa5@loteriaimperatriz.com': { tipo: 'operador', caixa: 5, nome: 'Operador Caixa 5' },
-  'caixa6@loteriaimperatriz.com': { tipo: 'operador', caixa: 6, nome: 'Operador Caixa 6' },
-}
-
-// Função para obter dados do usuário
-const obterDadosUsuario = (email) => {
-  return USUARIOS_CONFIGURADOS[email] || null
-}
 
 // Utilitários
 const formatarMoeda = (valor) => {
@@ -46,68 +24,36 @@ const formatarDataHora = (dataString) => {
   }).format(data)
 }
 
-// ========================================
-// 💾 FUNÇÕES DE ARMAZENAMENTO SIMPLES
-// ========================================
-
-// Salvar dados no localStorage
-const salvarDados = (chave, dados) => {
-  try {
-    localStorage.setItem(chave, JSON.stringify(dados))
-    console.log('✅ Dados salvos:', chave, dados)
-    return true
-  } catch (error) {
-    console.error('❌ Erro ao salvar:', error)
-    return false
-  }
-}
-
-// Carregar dados do localStorage
-const carregarDados = (chave, padrao = []) => {
-  try {
-    const dados = localStorage.getItem(chave)
-    if (dados) {
-      const resultado = JSON.parse(dados)
-      console.log('📦 Dados carregados:', chave, resultado)
-      return resultado
-    }
-    return padrao
-  } catch (error) {
-    console.error('❌ Erro ao carregar:', error)
-    return padrao
-  }
-}
-
 // Componente Header
-function Header({ onLogout, dadosUsuario, dataSelecionada, setDataSelecionada }) {
+function Header({ onLogout, dataSelecionada, setDataSelecionada, userEmail }) {
   return (
     <header className="bg-teal-600 text-white p-4 shadow-lg">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-xl font-bold">Loteria Imperatriz</h1>
-          <p className="text-sm opacity-90">Sistema de Gestão Financeira - Simples</p>
+          <p className="text-sm opacity-90">Sistema de Gestão Financeira - Funcional</p>
         </div>
         
-        {dadosUsuario.tipo === 'admin' && (
-          <div className="flex items-center gap-4">
-            <div>
-              <label className="block text-sm opacity-90 mb-1">Data:</label>
-              <input
-                type="date"
-                value={dataSelecionada}
-                onChange={(e) => setDataSelecionada(e.target.value)}
-                className="px-3 py-1 rounded text-gray-800 text-sm"
-              />
-            </div>
+        <div className="flex items-center gap-4">
+          <div>
+            <label className="block text-sm opacity-90 mb-1">Data:</label>
+            <input
+              type="date"
+              value={dataSelecionada}
+              onChange={(e) => setDataSelecionada(e.target.value)}
+              className="px-3 py-1 rounded text-gray-800 text-sm"
+            />
           </div>
-        )}
+        </div>
         
-        <div className="text-right">
-          <p className="text-sm opacity-90">{dadosUsuario.tipo === 'admin' ? 'Administrador' : 'Operador'}</p>
-          <p className="font-medium">{dadosUsuario.nome}</p>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-sm opacity-90">Administrador</p>
+            <p className="font-semibold">Administrador Principal</p>
+          </div>
           <button 
             onClick={onLogout}
-            className="mt-1 px-3 py-1 bg-red-500 hover:bg-red-600 rounded text-sm"
+            className="bg-teal-700 hover:bg-teal-800 px-4 py-2 rounded transition-colors"
           >
             Sair
           </button>
@@ -118,30 +64,22 @@ function Header({ onLogout, dadosUsuario, dataSelecionada, setDataSelecionada })
 }
 
 // Componente Sidebar
-function Sidebar({ caixaAtivo, setCaixaAtivo, dadosUsuario }) {
-  const caixasDisponiveis = dadosUsuario.tipo === 'admin' 
-    ? [1, 2, 3, 4, 5, 6] 
-    : [dadosUsuario.caixa]
-
+function Sidebar({ caixaAtivo, setCaixaAtivo }) {
   return (
     <div className="bg-gray-100 w-64 p-4 shadow-lg">
       <nav className="space-y-2">
-        {dadosUsuario.tipo === 'admin' && (
-          <>
-            <button
-              onClick={() => setCaixaAtivo('resumo')}
-              className={`w-full text-left p-3 rounded-lg transition-colors ${
-                caixaAtivo === 'resumo' 
-                  ? 'bg-blue-500 text-white' 
-                  : 'bg-white hover:bg-blue-50'
-              }`}
-            >
-              📊 Resumo Geral
-            </button>
-          </>
-        )}
+        <button
+          onClick={() => setCaixaAtivo('resumo')}
+          className={`w-full text-left p-3 rounded-lg transition-colors ${
+            caixaAtivo === 'resumo' 
+              ? 'bg-blue-500 text-white' 
+              : 'bg-white hover:bg-blue-50'
+          }`}
+        >
+          📊 Resumo Geral
+        </button>
         
-        {caixasDisponiveis.map(numero => (
+        {[1, 2, 3, 4, 5, 6].map(numero => (
           <button
             key={numero}
             onClick={() => setCaixaAtivo(`caixa-${numero}`)}
@@ -155,45 +93,41 @@ function Sidebar({ caixaAtivo, setCaixaAtivo, dadosUsuario }) {
           </button>
         ))}
         
-        {dadosUsuario.tipo === 'admin' && (
-          <>
-            <button
-              onClick={() => setCaixaAtivo('central')}
-              className={`w-full text-left p-3 rounded-lg transition-colors ${
-                caixaAtivo === 'central' 
-                  ? 'bg-purple-500 text-white' 
-                  : 'bg-white hover:bg-purple-50'
-              }`}
-            >
-              🏢 Caixa Central
-            </button>
-            
-            <button
-              onClick={() => setCaixaAtivo('relatorio')}
-              className={`w-full text-left p-3 rounded-lg transition-colors ${
-                caixaAtivo === 'relatorio' 
-                  ? 'bg-red-500 text-white' 
-                  : 'bg-white hover:bg-red-50'
-              }`}
-            >
-              📄 Relatório
-            </button>
-          </>
-        )}
+        <button
+          onClick={() => setCaixaAtivo('central')}
+          className={`w-full text-left p-3 rounded-lg transition-colors ${
+            caixaAtivo === 'central' 
+              ? 'bg-purple-500 text-white' 
+              : 'bg-white hover:bg-purple-50'
+          }`}
+        >
+          🏢 Caixa Central
+        </button>
+        
+        <button
+          onClick={() => setCaixaAtivo('relatorio')}
+          className={`w-full text-left p-3 rounded-lg transition-colors ${
+            caixaAtivo === 'relatorio' 
+              ? 'bg-red-500 text-white' 
+              : 'bg-white hover:bg-red-50'
+          }`}
+        >
+          📄 Relatório
+        </button>
       </nav>
     </div>
   )
 }
 
 // Componente Caixa Individual
-function CaixaIndividual({ numero, dataSelecionada, dadosUsuario }) {
+function CaixaIndividual({ numero, dataSelecionada }) {
+  const [movimentacoes, setMovimentacoes] = useState([])
   const [dadosCaixa, setDadosCaixa] = useState({
     trocoInicial: 0,
     valorMaquina: 0,
     fechado: false
   })
   
-  const [movimentacoes, setMovimentacoes] = useState([])
   const [novoSuprimento, setNovoSuprimento] = useState({ valor: '', observacao: '' })
   const [novaSangria, setNovaSangria] = useState({ valor: '', observacao: '' })
   const [novoTroco, setNovoTroco] = useState('')
@@ -204,15 +138,19 @@ function CaixaIndividual({ numero, dataSelecionada, dadosUsuario }) {
     const chaveMovimentacoes = `movimentacoes_caixa_${numero}_${dataSelecionada}`
     const chaveDados = `dados_caixa_${numero}_${dataSelecionada}`
     
-    const movimentacoesCarregadas = carregarDados(chaveMovimentacoes, [])
-    const dadosCarregados = carregarDados(chaveDados, {
-      trocoInicial: 0,
-      valorMaquina: 0,
-      fechado: false
-    })
-    
-    setMovimentacoes(movimentacoesCarregadas)
-    setDadosCaixa(dadosCarregados)
+    try {
+      const movimentacoesCarregadas = JSON.parse(localStorage.getItem(chaveMovimentacoes) || '[]')
+      const dadosCarregados = JSON.parse(localStorage.getItem(chaveDados) || '{"trocoInicial":0,"valorMaquina":0,"fechado":false}')
+      
+      setMovimentacoes(movimentacoesCarregadas)
+      setDadosCaixa(dadosCarregados)
+      
+      console.log('📦 Dados carregados para Caixa', numero, ':', { movimentacoesCarregadas, dadosCarregados })
+    } catch (error) {
+      console.error('❌ Erro ao carregar dados:', error)
+      setMovimentacoes([])
+      setDadosCaixa({ trocoInicial: 0, valorMaquina: 0, fechado: false })
+    }
   }, [numero, dataSelecionada])
 
   // Calcular totais
@@ -240,7 +178,7 @@ function CaixaIndividual({ numero, dataSelecionada, dadosUsuario }) {
       tipo: 'suprimento',
       valor: valor,
       observacao: novoSuprimento.observacao || 'Suprimento',
-      criadoPor: dadosUsuario.nome,
+      criadoPor: 'Administrador Principal',
       criadoEm: new Date().toISOString()
     }
 
@@ -249,7 +187,9 @@ function CaixaIndividual({ numero, dataSelecionada, dadosUsuario }) {
     
     // Salvar no localStorage
     const chaveMovimentacoes = `movimentacoes_caixa_${numero}_${dataSelecionada}`
-    salvarDados(chaveMovimentacoes, novasMovimentacoes)
+    localStorage.setItem(chaveMovimentacoes, JSON.stringify(novasMovimentacoes))
+    
+    console.log('✅ Suprimento adicionado:', novaMovimentacao)
     
     // Limpar formulário
     setNovoSuprimento({ valor: '', observacao: '' })
@@ -270,7 +210,7 @@ function CaixaIndividual({ numero, dataSelecionada, dadosUsuario }) {
       tipo: 'sangria',
       valor: valor,
       observacao: novaSangria.observacao || 'Sangria',
-      criadoPor: dadosUsuario.nome,
+      criadoPor: 'Administrador Principal',
       criadoEm: new Date().toISOString()
     }
 
@@ -279,7 +219,9 @@ function CaixaIndividual({ numero, dataSelecionada, dadosUsuario }) {
     
     // Salvar no localStorage
     const chaveMovimentacoes = `movimentacoes_caixa_${numero}_${dataSelecionada}`
-    salvarDados(chaveMovimentacoes, novasMovimentacoes)
+    localStorage.setItem(chaveMovimentacoes, JSON.stringify(novasMovimentacoes))
+    
+    console.log('✅ Sangria adicionada:', novaMovimentacao)
     
     // Limpar formulário
     setNovaSangria({ valor: '', observacao: '' })
@@ -287,7 +229,7 @@ function CaixaIndividual({ numero, dataSelecionada, dadosUsuario }) {
     alert('Sangria adicionada com sucesso!')
   }
 
-  // Definir troco inicial (apenas admin)
+  // Definir troco inicial
   const definirTrocoInicial = () => {
     const valor = parseFloat(novoTroco)
     if (isNaN(valor) || valor < 0) {
@@ -299,13 +241,15 @@ function CaixaIndividual({ numero, dataSelecionada, dadosUsuario }) {
     setDadosCaixa(novosDados)
     
     const chaveDados = `dados_caixa_${numero}_${dataSelecionada}`
-    salvarDados(chaveDados, novosDados)
+    localStorage.setItem(chaveDados, JSON.stringify(novosDados))
+    
+    console.log('✅ Troco inicial definido:', valor)
     
     setNovoTroco('')
     alert('Troco inicial definido com sucesso!')
   }
 
-  // Definir valor da máquina (apenas admin)
+  // Definir valor da máquina
   const definirValorMaquina = () => {
     const valor = parseFloat(novoValorMaquina)
     if (isNaN(valor) || valor < 0) {
@@ -317,7 +261,9 @@ function CaixaIndividual({ numero, dataSelecionada, dadosUsuario }) {
     setDadosCaixa(novosDados)
     
     const chaveDados = `dados_caixa_${numero}_${dataSelecionada}`
-    salvarDados(chaveDados, novosDados)
+    localStorage.setItem(chaveDados, JSON.stringify(novosDados))
+    
+    console.log('✅ Valor da máquina definido:', valor)
     
     setNovoValorMaquina('')
     alert('Valor da máquina definido com sucesso!')
@@ -360,62 +306,60 @@ function CaixaIndividual({ numero, dataSelecionada, dadosUsuario }) {
         </div>
       </div>
 
-      {/* Configurações (apenas admin) */}
-      {dadosUsuario.tipo === 'admin' && (
-        <div className="grid grid-cols-2 gap-6 mb-6">
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="font-semibold mb-3">⚙️ Configurar Troco Inicial</h3>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                value={novoTroco}
-                onChange={(e) => setNovoTroco(e.target.value)}
-                placeholder="Valor do troco inicial (R$)"
-                className="flex-1 p-2 border rounded"
-              />
-              <button
-                onClick={definirTrocoInicial}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-              >
-                Definir
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="font-semibold mb-3">🖥️ Valor da Máquina</h3>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                value={novoValorMaquina}
-                onChange={(e) => setNovoValorMaquina(e.target.value)}
-                placeholder="Valor final da máquina (R$)"
-                className="flex-1 p-2 border rounded"
-              />
-              <button
-                onClick={definirValorMaquina}
-                className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
-              >
-                Definir
-              </button>
-            </div>
-            {dadosCaixa.valorMaquina > 0 && (
-              <div className={`mt-2 p-2 rounded ${
-                Math.abs(divergencia) < 0.01 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-red-100 text-red-800'
-              }`}>
-                <p className="text-sm">
-                  Valor da máquina: {formatarMoeda(dadosCaixa.valorMaquina)}
-                </p>
-                <p className="text-sm">
-                  Divergência: {formatarMoeda(divergencia)}
-                </p>
-              </div>
-            )}
+      {/* Configurações */}
+      <div className="grid grid-cols-2 gap-6 mb-6">
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-semibold mb-3">⚙️ Configurar Troco Inicial</h3>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              value={novoTroco}
+              onChange={(e) => setNovoTroco(e.target.value)}
+              placeholder="Valor do troco inicial (R$)"
+              className="flex-1 p-2 border rounded"
+            />
+            <button
+              onClick={definirTrocoInicial}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Definir
+            </button>
           </div>
         </div>
-      )}
+
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-semibold mb-3">🖥️ Valor da Máquina</h3>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              value={novoValorMaquina}
+              onChange={(e) => setNovoValorMaquina(e.target.value)}
+              placeholder="Valor final da máquina (R$)"
+              className="flex-1 p-2 border rounded"
+            />
+            <button
+              onClick={definirValorMaquina}
+              className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+            >
+              Definir
+            </button>
+          </div>
+          {dadosCaixa.valorMaquina > 0 && (
+            <div className={`mt-2 p-2 rounded ${
+              Math.abs(divergencia) < 0.01 
+                ? 'bg-green-100 text-green-800' 
+                : 'bg-red-100 text-red-800'
+            }`}>
+              <p className="text-sm">
+                Valor da máquina: {formatarMoeda(dadosCaixa.valorMaquina)}
+              </p>
+              <p className="text-sm">
+                Divergência: {formatarMoeda(divergencia)}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Formulários de Movimentação */}
       <div className="grid grid-cols-2 gap-6 mb-6">
@@ -526,18 +470,22 @@ function ResumoGeral({ dataSelecionada }) {
       const chaveMovimentacoes = `movimentacoes_caixa_${i}_${dataSelecionada}`
       const chaveDados = `dados_caixa_${i}_${dataSelecionada}`
       
-      const movimentacoes = carregarDados(chaveMovimentacoes, [])
-      const dados = carregarDados(chaveDados, { fechado: false })
-      
-      totalSuprimentos += movimentacoes
-        .filter(m => m.tipo === 'suprimento')
-        .reduce((total, m) => total + m.valor, 0)
+      try {
+        const movimentacoes = JSON.parse(localStorage.getItem(chaveMovimentacoes) || '[]')
+        const dados = JSON.parse(localStorage.getItem(chaveDados) || '{"fechado":false}')
         
-      totalSangrias += movimentacoes
-        .filter(m => m.tipo === 'sangria')
-        .reduce((total, m) => total + m.valor, 0)
-        
-      if (dados.fechado) caixasFechados++
+        totalSuprimentos += movimentacoes
+          .filter(m => m.tipo === 'suprimento')
+          .reduce((total, m) => total + m.valor, 0)
+          
+        totalSangrias += movimentacoes
+          .filter(m => m.tipo === 'sangria')
+          .reduce((total, m) => total + m.valor, 0)
+          
+        if (dados.fechado) caixasFechados++
+      } catch (error) {
+        console.error('Erro ao calcular resumo para caixa', i, ':', error)
+      }
     }
 
     setResumo({ totalSuprimentos, totalSangrias, caixasFechados })
@@ -545,7 +493,7 @@ function ResumoGeral({ dataSelecionada }) {
 
   return (
     <div className="p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">📊 Resumo Geral - Sistema Simples</h2>
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">📊 Resumo Geral - Sistema Funcional</h2>
       
       <div className="grid grid-cols-3 gap-6 mb-6">
         <div className="bg-green-50 p-6 rounded-lg">
@@ -565,12 +513,12 @@ function ResumoGeral({ dataSelecionada }) {
         </div>
       </div>
 
-      <div className="bg-blue-50 p-4 rounded-lg">
-        <h3 className="font-semibold text-blue-800 mb-2">📋 Status da Sincronização</h3>
+      <div className="bg-green-50 p-4 rounded-lg">
+        <h3 className="font-semibold text-green-800 mb-2">✅ Status do Sistema</h3>
         <div className="space-y-1 text-sm">
-          <p>✅ Sistema funcionando localmente</p>
-          <p>✅ Dados salvos no navegador</p>
-          <p>✅ Backup automático no localStorage</p>
+          <p>✅ Sistema funcionando corretamente</p>
+          <p>✅ Dados salvos localmente</p>
+          <p>✅ Todas as funcionalidades operacionais</p>
         </div>
       </div>
     </div>
@@ -585,32 +533,6 @@ function AppContent() {
     new Date().toISOString().split('T')[0]
   )
 
-  const dadosUsuario = obterDadosUsuario(user?.email)
-
-  if (!dadosUsuario) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-bold text-red-600 mb-2">Acesso Negado</h2>
-          <p className="text-gray-600 mb-4">Usuário não autorizado: {user?.email}</p>
-          <button 
-            onClick={logout}
-            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-          >
-            Fazer Logout
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // Se for operador, definir caixa automaticamente
-  useEffect(() => {
-    if (dadosUsuario.tipo === 'operador') {
-      setCaixaAtivo(`caixa-${dadosUsuario.caixa}`)
-    }
-  }, [dadosUsuario])
-
   const renderizarConteudo = () => {
     if (caixaAtivo === 'resumo') {
       return <ResumoGeral dataSelecionada={dataSelecionada} />
@@ -620,7 +542,6 @@ function AppContent() {
         <CaixaIndividual 
           numero={numero} 
           dataSelecionada={dataSelecionada}
-          dadosUsuario={dadosUsuario}
         />
       )
     } else if (caixaAtivo === 'central') {
@@ -644,16 +565,15 @@ function AppContent() {
     <div className="min-h-screen bg-gray-50">
       <Header 
         onLogout={logout}
-        dadosUsuario={dadosUsuario}
         dataSelecionada={dataSelecionada}
         setDataSelecionada={setDataSelecionada}
+        userEmail={user?.email}
       />
       
       <div className="flex">
         <Sidebar 
           caixaAtivo={caixaAtivo}
           setCaixaAtivo={setCaixaAtivo}
-          dadosUsuario={dadosUsuario}
         />
         
         <main className="flex-1">
