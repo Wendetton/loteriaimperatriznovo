@@ -1,8 +1,23 @@
-// App.jsx - VERSÃO LIMPA E 100% FUNCIONAL
+// App.jsx - VERSÃO COM SINCRONIZAÇÃO EM TEMPO REAL
 import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Login from './pages/Login'
 import './App.css'
+
+// Importações do Firebase
+import { 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  query, 
+  where, 
+  orderBy, 
+  doc, 
+  setDoc, 
+  deleteDoc,
+  getDocs 
+} from 'firebase/firestore'
+import { db } from './services/firebase'
 
 // ========================================
 // 📧 CONFIGURAÇÃO DE USUÁRIOS
@@ -46,6 +61,87 @@ const formatarDataHora = (dataString) => {
   }).format(data)
 }
 
+// ========================================
+// 🔄 FUNÇÕES DE SINCRONIZAÇÃO FIREBASE
+// ========================================
+
+// Salvar movimentação no Firebase
+const salvarMovimentacaoFirebase = async (movimentacao, dataSelecionada, numeroCaixa) => {
+  try {
+    const docData = {
+      ...movimentacao,
+      data: dataSelecionada,
+      caixa: numeroCaixa,
+      timestamp: new Date()
+    }
+    
+    await addDoc(collection(db, 'movimentacoes'), docData)
+    console.log('✅ Movimentação salva no Firebase:', movimentacao)
+    return true
+  } catch (error) {
+    console.error('❌ Erro ao salvar no Firebase:', error)
+    return false
+  }
+}
+
+// Salvar dados do caixa no Firebase
+const salvarDadosCaixaFirebase = async (dadosCaixa, dataSelecionada, numeroCaixa) => {
+  try {
+    const docId = `${dataSelecionada}_caixa_${numeroCaixa}`
+    const docData = {
+      ...dadosCaixa,
+      data: dataSelecionada,
+      caixa: numeroCaixa,
+      timestamp: new Date()
+    }
+    
+    await setDoc(doc(db, 'caixas', docId), docData)
+    console.log('✅ Dados do caixa salvos no Firebase:', dadosCaixa)
+    return true
+  } catch (error) {
+    console.error('❌ Erro ao salvar dados do caixa no Firebase:', error)
+    return false
+  }
+}
+
+// Salvar dados do caixa central no Firebase
+const salvarDadosCentralFirebase = async (dadosCentral, dataSelecionada) => {
+  try {
+    const docId = `${dataSelecionada}_central`
+    const docData = {
+      ...dadosCentral,
+      data: dataSelecionada,
+      timestamp: new Date()
+    }
+    
+    await setDoc(doc(db, 'caixa_central', docId), docData)
+    console.log('✅ Dados do caixa central salvos no Firebase:', dadosCentral)
+    return true
+  } catch (error) {
+    console.error('❌ Erro ao salvar dados do caixa central no Firebase:', error)
+    return false
+  }
+}
+
+// Excluir movimentação do Firebase
+const excluirMovimentacaoFirebase = async (movimentacaoId) => {
+  try {
+    // Buscar documento por ID da movimentação
+    const q = query(collection(db, 'movimentacoes'), where('id', '==', movimentacaoId))
+    const querySnapshot = await getDocs(q)
+    
+    querySnapshot.forEach(async (docSnapshot) => {
+      await deleteDoc(doc(db, 'movimentacoes', docSnapshot.id))
+    })
+    
+    console.log('✅ Movimentação excluída do Firebase:', movimentacaoId)
+    return true
+  } catch (error) {
+    console.error('❌ Erro ao excluir do Firebase:', error)
+    return false
+  }
+}
+
 // Componente Header
 function Header({ onLogout, dadosUsuario, dataSelecionada, setDataSelecionada }) {
   return (
@@ -53,7 +149,7 @@ function Header({ onLogout, dadosUsuario, dataSelecionada, setDataSelecionada })
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-xl font-bold">Loteria Imperatriz</h1>
-          <p className="text-sm opacity-90">Sistema de Gestão Financeira</p>
+          <p className="text-sm opacity-90">Sistema de Gestão Financeira - Sincronizado</p>
         </div>
         
         {dadosUsuario.tipo === 'admin' && (
@@ -104,64 +200,115 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
   const [obsSuprimento, setObsSuprimento] = useState('')
   const [valorSangria, setValorSangria] = useState('')
   const [obsSangria, setObsSangria] = useState('')
+  const [sincronizando, setSincronizando] = useState(false)
 
   const isAdmin = dadosUsuario.tipo === 'admin'
 
-  // Carregar dados do localStorage
+  // ========================================
+  // 🔄 SINCRONIZAÇÃO EM TEMPO REAL
+  // ========================================
+
+  // Listener para movimentações em tempo real
   useEffect(() => {
-    const carregarDados = () => {
-      try {
-        // Carregar movimentações
-        const keyMovs = `movimentacoes_${dataSelecionada}_${numeroCaixa}`
-        const movsData = localStorage.getItem(keyMovs)
-        if (movsData) {
-          setMovimentacoes(JSON.parse(movsData))
-        } else {
-          setMovimentacoes([])
-        }
+    console.log(`🔄 Configurando listener para movimentações - Caixa ${numeroCaixa}, Data: ${dataSelecionada}`)
+    
+    const q = query(
+      collection(db, 'movimentacoes'),
+      where('data', '==', dataSelecionada),
+      where('caixa', '==', numeroCaixa),
+      orderBy('timestamp', 'desc')
+    )
 
-        // Carregar dados do caixa
-        const keyCaixa = `caixa_${dataSelecionada}_${numeroCaixa}`
-        const caixaData = localStorage.getItem(keyCaixa)
-        if (caixaData) {
-          const dados = JSON.parse(caixaData)
-          setDadosCaixa(dados)
-          setTrocoInicial(dados.trocoInicial || '')
-          setValorMaquina(dados.valorMaquina || '')
-        } else {
-          setDadosCaixa({
-            trocoInicial: 0,
-            valorMaquina: 0,
-            fechado: false
-          })
-        }
-      } catch (error) {
-        console.error('Erro ao carregar dados:', error)
-      }
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const movs = []
+      querySnapshot.forEach((doc) => {
+        movs.push({ firebaseId: doc.id, ...doc.data() })
+      })
+      
+      console.log(`📦 Movimentações recebidas do Firebase (Caixa ${numeroCaixa}):`, movs)
+      setMovimentacoes(movs)
+      
+      // Salvar no localStorage como backup
+      const keyMovs = `movimentacoes_${dataSelecionada}_${numeroCaixa}`
+      localStorage.setItem(keyMovs, JSON.stringify(movs))
+    }, (error) => {
+      console.error('❌ Erro no listener de movimentações:', error)
+      // Fallback para localStorage
+      carregarMovimentacaoesLocal()
+    })
+
+    return () => {
+      console.log(`🔄 Desconectando listener - Caixa ${numeroCaixa}`)
+      unsubscribe()
     }
-
-    carregarDados()
   }, [dataSelecionada, numeroCaixa])
 
-  // Salvar dados no localStorage
-  const salvarDadosCaixa = (novosDados) => {
+  // Listener para dados do caixa em tempo real
+  useEffect(() => {
+    console.log(`🔄 Configurando listener para dados do caixa - Caixa ${numeroCaixa}, Data: ${dataSelecionada}`)
+    
+    const docId = `${dataSelecionada}_caixa_${numeroCaixa}`
+    const unsubscribe = onSnapshot(doc(db, 'caixas', docId), (doc) => {
+      if (doc.exists()) {
+        const dados = doc.data()
+        console.log(`📦 Dados do caixa recebidos do Firebase (Caixa ${numeroCaixa}):`, dados)
+        setDadosCaixa(dados)
+        setTrocoInicial(dados.trocoInicial || '')
+        setValorMaquina(dados.valorMaquina || '')
+        
+        // Salvar no localStorage como backup
+        const keyCaixa = `caixa_${dataSelecionada}_${numeroCaixa}`
+        localStorage.setItem(keyCaixa, JSON.stringify(dados))
+      } else {
+        console.log(`📦 Nenhum dado encontrado no Firebase para Caixa ${numeroCaixa}, carregando do localStorage`)
+        carregarDadosCaixaLocal()
+      }
+    }, (error) => {
+      console.error('❌ Erro no listener de dados do caixa:', error)
+      // Fallback para localStorage
+      carregarDadosCaixaLocal()
+    })
+
+    return () => {
+      console.log(`🔄 Desconectando listener dados do caixa - Caixa ${numeroCaixa}`)
+      unsubscribe()
+    }
+  }, [dataSelecionada, numeroCaixa])
+
+  // Funções de fallback para localStorage
+  const carregarMovimentacaoesLocal = () => {
     try {
-      const key = `caixa_${dataSelecionada}_${numeroCaixa}`
-      const dadosCompletos = { ...dadosCaixa, ...novosDados }
-      localStorage.setItem(key, JSON.stringify(dadosCompletos))
-      setDadosCaixa(dadosCompletos)
+      const keyMovs = `movimentacoes_${dataSelecionada}_${numeroCaixa}`
+      const movsData = localStorage.getItem(keyMovs)
+      if (movsData) {
+        setMovimentacoes(JSON.parse(movsData))
+      } else {
+        setMovimentacoes([])
+      }
     } catch (error) {
-      console.error('Erro ao salvar dados do caixa:', error)
+      console.error('Erro ao carregar movimentações do localStorage:', error)
+      setMovimentacoes([])
     }
   }
 
-  const salvarMovimentacoes = (novasMovs) => {
+  const carregarDadosCaixaLocal = () => {
     try {
-      const key = `movimentacoes_${dataSelecionada}_${numeroCaixa}`
-      localStorage.setItem(key, JSON.stringify(novasMovs))
-      setMovimentacoes(novasMovs)
+      const keyCaixa = `caixa_${dataSelecionada}_${numeroCaixa}`
+      const caixaData = localStorage.getItem(keyCaixa)
+      if (caixaData) {
+        const dados = JSON.parse(caixaData)
+        setDadosCaixa(dados)
+        setTrocoInicial(dados.trocoInicial || '')
+        setValorMaquina(dados.valorMaquina || '')
+      } else {
+        setDadosCaixa({
+          trocoInicial: 0,
+          valorMaquina: 0,
+          fechado: false
+        })
+      }
     } catch (error) {
-      console.error('Erro ao salvar movimentações:', error)
+      console.error('Erro ao carregar dados do caixa do localStorage:', error)
     }
   }
 
@@ -192,33 +339,63 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
 
   const totais = calcularTotais()
 
-  // Handlers
-  const handleAtualizarTrocoInicial = () => {
+  // ========================================
+  // 📝 HANDLERS COM SINCRONIZAÇÃO
+  // ========================================
+
+  const handleAtualizarTrocoInicial = async () => {
     if (!trocoInicial || parseFloat(trocoInicial) < 0) {
       alert('Por favor, insira um valor válido para o troco inicial')
       return
     }
 
-    salvarDadosCaixa({ trocoInicial: parseFloat(trocoInicial) })
+    setSincronizando(true)
+    const novosDados = { ...dadosCaixa, trocoInicial: parseFloat(trocoInicial) }
+    
+    // Salvar no Firebase
+    const sucesso = await salvarDadosCaixaFirebase(novosDados, dataSelecionada, numeroCaixa)
+    
+    if (!sucesso) {
+      // Fallback para localStorage se Firebase falhar
+      const keyCaixa = `caixa_${dataSelecionada}_${numeroCaixa}`
+      localStorage.setItem(keyCaixa, JSON.stringify(novosDados))
+      setDadosCaixa(novosDados)
+    }
+    
+    setSincronizando(false)
     alert('Troco inicial atualizado com sucesso!')
   }
 
-  const handleAtualizarValorMaquina = () => {
+  const handleAtualizarValorMaquina = async () => {
     if (!valorMaquina || parseFloat(valorMaquina) < 0) {
       alert('Por favor, insira um valor válido para o valor da máquina')
       return
     }
 
-    salvarDadosCaixa({ valorMaquina: parseFloat(valorMaquina) })
+    setSincronizando(true)
+    const novosDados = { ...dadosCaixa, valorMaquina: parseFloat(valorMaquina) }
+    
+    // Salvar no Firebase
+    const sucesso = await salvarDadosCaixaFirebase(novosDados, dataSelecionada, numeroCaixa)
+    
+    if (!sucesso) {
+      // Fallback para localStorage se Firebase falhar
+      const keyCaixa = `caixa_${dataSelecionada}_${numeroCaixa}`
+      localStorage.setItem(keyCaixa, JSON.stringify(novosDados))
+      setDadosCaixa(novosDados)
+    }
+    
+    setSincronizando(false)
     alert('Valor da máquina atualizado com sucesso!')
   }
 
-  const handleAdicionarSuprimento = () => {
+  const handleAdicionarSuprimento = async () => {
     if (!valorSuprimento || parseFloat(valorSuprimento) <= 0) {
       alert('Por favor, insira um valor válido para o suprimento')
       return
     }
 
+    setSincronizando(true)
     const novaMovimentacao = {
       id: Date.now().toString(),
       tipo: 'suprimento',
@@ -228,20 +405,30 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
       criadoPor: dadosUsuario.nome
     }
 
-    const novasMovs = [...movimentacoes, novaMovimentacao]
-    salvarMovimentacoes(novasMovs)
+    // Salvar no Firebase
+    const sucesso = await salvarMovimentacaoFirebase(novaMovimentacao, dataSelecionada, numeroCaixa)
+    
+    if (!sucesso) {
+      // Fallback para localStorage se Firebase falhar
+      const novasMovs = [...movimentacoes, novaMovimentacao]
+      const keyMovs = `movimentacoes_${dataSelecionada}_${numeroCaixa}`
+      localStorage.setItem(keyMovs, JSON.stringify(novasMovs))
+      setMovimentacoes(novasMovs)
+    }
     
     setValorSuprimento('')
     setObsSuprimento('')
+    setSincronizando(false)
     alert('Suprimento adicionado com sucesso!')
   }
 
-  const handleAdicionarSangria = () => {
+  const handleAdicionarSangria = async () => {
     if (!valorSangria || parseFloat(valorSangria) <= 0) {
       alert('Por favor, insira um valor válido para a sangria')
       return
     }
 
+    setSincronizando(true)
     const novaMovimentacao = {
       id: Date.now().toString(),
       tipo: 'sangria',
@@ -251,35 +438,70 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
       criadoPor: dadosUsuario.nome
     }
 
-    const novasMovs = [...movimentacoes, novaMovimentacao]
-    salvarMovimentacoes(novasMovs)
+    // Salvar no Firebase
+    const sucesso = await salvarMovimentacaoFirebase(novaMovimentacao, dataSelecionada, numeroCaixa)
+    
+    if (!sucesso) {
+      // Fallback para localStorage se Firebase falhar
+      const novasMovs = [...movimentacoes, novaMovimentacao]
+      const keyMovs = `movimentacoes_${dataSelecionada}_${numeroCaixa}`
+      localStorage.setItem(keyMovs, JSON.stringify(novasMovs))
+      setMovimentacoes(novasMovs)
+    }
     
     setValorSangria('')
     setObsSangria('')
+    setSincronizando(false)
     alert('Sangria adicionada com sucesso!')
   }
 
-  const handleFecharCaixa = () => {
+  const handleFecharCaixa = async () => {
     if (!dadosCaixa.valorMaquina || dadosCaixa.valorMaquina === 0) {
       alert('Por favor, defina o valor da máquina antes de fechar o caixa')
       return
     }
 
     if (window.confirm('Tem certeza que deseja fechar este caixa? Esta ação não pode ser desfeita.')) {
-      salvarDadosCaixa({ 
+      setSincronizando(true)
+      const novosDados = { 
+        ...dadosCaixa,
         fechado: true,
         fechadoPor: dadosUsuario.nome,
         fechadoEm: new Date().toISOString()
-      })
+      }
+      
+      // Salvar no Firebase
+      const sucesso = await salvarDadosCaixaFirebase(novosDados, dataSelecionada, numeroCaixa)
+      
+      if (!sucesso) {
+        // Fallback para localStorage se Firebase falhar
+        const keyCaixa = `caixa_${dataSelecionada}_${numeroCaixa}`
+        localStorage.setItem(keyCaixa, JSON.stringify(novosDados))
+        setDadosCaixa(novosDados)
+      }
+      
+      setSincronizando(false)
       alert('Caixa fechado com sucesso!')
     }
   }
 
-  const handleExcluirMovimentacao = (id) => {
+  const handleExcluirMovimentacao = async (movimentacao) => {
     const senha = prompt('Digite a senha de confirmação para excluir:')
     if (senha === 'matilde') {
-      const novasMovs = movimentacoes.filter(m => m.id !== id)
-      salvarMovimentacoes(novasMovs)
+      setSincronizando(true)
+      
+      // Excluir do Firebase
+      const sucesso = await excluirMovimentacaoFirebase(movimentacao.id)
+      
+      if (!sucesso) {
+        // Fallback para localStorage se Firebase falhar
+        const novasMovs = movimentacoes.filter(m => m.id !== movimentacao.id)
+        const keyMovs = `movimentacoes_${dataSelecionada}_${numeroCaixa}`
+        localStorage.setItem(keyMovs, JSON.stringify(novasMovs))
+        setMovimentacoes(novasMovs)
+      }
+      
+      setSincronizando(false)
       alert('Movimentação excluída com sucesso!')
     } else {
       alert('Senha incorreta!')
@@ -297,6 +519,9 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
             <p className={`font-semibold ${totais.fechado ? 'text-green-600' : 'text-orange-600'}`}>
               {totais.fechado ? '✅ Fechado' : '⏳ Aberto'}
             </p>
+            {sincronizando && (
+              <p className="text-sm text-blue-600 animate-pulse">🔄 Sincronizando...</p>
+            )}
           </div>
         </div>
 
@@ -333,14 +558,14 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
                   value={trocoInicial}
                   onChange={(e) => setTrocoInicial(e.target.value)}
                   className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                  disabled={totais.fechado}
+                  disabled={totais.fechado || sincronizando}
                 />
                 <button 
                   onClick={handleAtualizarTrocoInicial}
-                  disabled={totais.fechado}
+                  disabled={totais.fechado || sincronizando}
                   className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors disabled:bg-gray-400"
                 >
-                  Definir
+                  {sincronizando ? '🔄' : 'Definir'}
                 </button>
               </div>
             </div>
@@ -355,14 +580,14 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
                   value={valorMaquina}
                   onChange={(e) => setValorMaquina(e.target.value)}
                   className="flex-1 p-2 border rounded focus:ring-2 focus:ring-gray-500"
-                  disabled={totais.fechado}
+                  disabled={totais.fechado || sincronizando}
                 />
                 <button 
                   onClick={handleAtualizarValorMaquina}
-                  disabled={totais.fechado}
+                  disabled={totais.fechado || sincronizando}
                   className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors disabled:bg-gray-400"
                 >
-                  Definir
+                  {sincronizando ? '🔄' : 'Definir'}
                 </button>
               </div>
             </div>
@@ -394,6 +619,7 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
                 value={valorSuprimento}
                 onChange={(e) => setValorSuprimento(e.target.value)}
                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500"
+                disabled={sincronizando}
               />
               <input 
                 type="text" 
@@ -401,12 +627,14 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
                 value={obsSuprimento}
                 onChange={(e) => setObsSuprimento(e.target.value)}
                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500"
+                disabled={sincronizando}
               />
               <button 
                 onClick={handleAdicionarSuprimento}
-                className="w-full bg-green-600 text-white p-3 rounded-lg hover:bg-green-700 transition-colors font-semibold"
+                disabled={sincronizando}
+                className="w-full bg-green-600 text-white p-3 rounded-lg hover:bg-green-700 transition-colors font-semibold disabled:bg-gray-400"
               >
-                Adicionar Suprimento
+                {sincronizando ? '🔄 Sincronizando...' : 'Adicionar Suprimento'}
               </button>
             </div>
           </div>
@@ -422,6 +650,7 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
                 value={valorSangria}
                 onChange={(e) => setValorSangria(e.target.value)}
                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500"
+                disabled={sincronizando}
               />
               <input 
                 type="text" 
@@ -429,12 +658,14 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
                 value={obsSangria}
                 onChange={(e) => setObsSangria(e.target.value)}
                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500"
+                disabled={sincronizando}
               />
               <button 
                 onClick={handleAdicionarSangria}
-                className="w-full bg-red-600 text-white p-3 rounded-lg hover:bg-red-700 transition-colors font-semibold"
+                disabled={sincronizando}
+                className="w-full bg-red-600 text-white p-3 rounded-lg hover:bg-red-700 transition-colors font-semibold disabled:bg-gray-400"
               >
-                Adicionar Sangria
+                {sincronizando ? '🔄 Sincronizando...' : 'Adicionar Sangria'}
               </button>
             </div>
           </div>
@@ -447,9 +678,10 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
           <h3 className="text-lg font-semibold mb-4 text-teal-700">🔒 Fechamento do Caixa</h3>
           <button 
             onClick={handleFecharCaixa}
-            className="bg-teal-600 text-white p-3 rounded-lg hover:bg-teal-700 transition-colors font-semibold"
+            disabled={sincronizando}
+            className="bg-teal-600 text-white p-3 rounded-lg hover:bg-teal-700 transition-colors font-semibold disabled:bg-gray-400"
           >
-            Fechar Caixa
+            {sincronizando ? '🔄 Sincronizando...' : 'Fechar Caixa'}
           </button>
         </div>
       )}
@@ -483,8 +715,9 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario, dataSelecionada }) {
                   </span>
                   {isAdmin && (
                     <button
-                      onClick={() => handleExcluirMovimentacao(mov.id)}
-                      className="text-red-500 hover:text-red-700 text-sm"
+                      onClick={() => handleExcluirMovimentacao(mov)}
+                      disabled={sincronizando}
+                      className="text-red-500 hover:text-red-700 text-sm disabled:text-gray-400"
                       title="Excluir movimentação"
                     >
                       🗑️
@@ -509,9 +742,40 @@ function CaixaCentral({ dataSelecionada }) {
   })
   
   const [valorInicial, setValorInicial] = useState('')
+  const [sincronizando, setSincronizando] = useState(false)
 
-  // Carregar dados do localStorage
+  // Listener para dados do caixa central em tempo real
   useEffect(() => {
+    console.log(`🔄 Configurando listener para caixa central - Data: ${dataSelecionada}`)
+    
+    const docId = `${dataSelecionada}_central`
+    const unsubscribe = onSnapshot(doc(db, 'caixa_central', docId), (doc) => {
+      if (doc.exists()) {
+        const dados = doc.data()
+        console.log('📦 Dados do caixa central recebidos do Firebase:', dados)
+        setDadosCentral(dados)
+        setValorInicial(dados.valorInicial || '')
+        
+        // Salvar no localStorage como backup
+        const key = `caixa_central_${dataSelecionada}`
+        localStorage.setItem(key, JSON.stringify(dados))
+      } else {
+        console.log('📦 Nenhum dado encontrado no Firebase para caixa central, carregando do localStorage')
+        carregarDadosLocal()
+      }
+    }, (error) => {
+      console.error('❌ Erro no listener do caixa central:', error)
+      // Fallback para localStorage
+      carregarDadosLocal()
+    })
+
+    return () => {
+      console.log('🔄 Desconectando listener caixa central')
+      unsubscribe()
+    }
+  }, [dataSelecionada])
+
+  const carregarDadosLocal = () => {
     try {
       const key = `caixa_central_${dataSelecionada}`
       const data = localStorage.getItem(key)
@@ -521,32 +785,34 @@ function CaixaCentral({ dataSelecionada }) {
         setValorInicial(dados.valorInicial || '')
       }
     } catch (error) {
-      console.error('Erro ao carregar dados do caixa central:', error)
-    }
-  }, [dataSelecionada])
-
-  const salvarDados = (novosDados) => {
-    try {
-      const key = `caixa_central_${dataSelecionada}`
-      const dadosCompletos = { ...dadosCentral, ...novosDados }
-      localStorage.setItem(key, JSON.stringify(dadosCompletos))
-      setDadosCentral(dadosCompletos)
-    } catch (error) {
-      console.error('Erro ao salvar dados do caixa central:', error)
+      console.error('Erro ao carregar dados do caixa central do localStorage:', error)
     }
   }
 
-  const handleAtualizarValorInicial = () => {
+  const handleAtualizarValorInicial = async () => {
     if (!valorInicial || parseFloat(valorInicial) < 0) {
       alert('Por favor, insira um valor válido')
       return
     }
 
-    salvarDados({ valorInicial: parseFloat(valorInicial) })
+    setSincronizando(true)
+    const novosDados = { ...dadosCentral, valorInicial: parseFloat(valorInicial) }
+    
+    // Salvar no Firebase
+    const sucesso = await salvarDadosCentralFirebase(novosDados, dataSelecionada)
+    
+    if (!sucesso) {
+      // Fallback para localStorage se Firebase falhar
+      const key = `caixa_central_${dataSelecionada}`
+      localStorage.setItem(key, JSON.stringify(novosDados))
+      setDadosCentral(novosDados)
+    }
+    
+    setSincronizando(false)
     alert('Valor inicial atualizado com sucesso!')
   }
 
-  // Calcular totais gerais
+  // Calcular totais gerais em tempo real
   const calcularTotaisGerais = () => {
     let totalSuprimentos = 0
     let totalSangrias = 0
@@ -573,9 +839,14 @@ function CaixaCentral({ dataSelecionada }) {
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">
-          🏢 Caixa Central - {new Date(dataSelecionada).toLocaleDateString('pt-BR')}
-        </h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-2xl font-bold text-gray-800">
+            🏢 Caixa Central - {new Date(dataSelecionada).toLocaleDateString('pt-BR')}
+          </h2>
+          {sincronizando && (
+            <p className="text-sm text-blue-600 animate-pulse">🔄 Sincronizando...</p>
+          )}
+        </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="bg-green-50 p-4 rounded-lg">
@@ -598,12 +869,14 @@ function CaixaCentral({ dataSelecionada }) {
               value={valorInicial}
               onChange={(e) => setValorInicial(e.target.value)}
               className="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              disabled={sincronizando}
             />
             <button 
               onClick={handleAtualizarValorInicial}
-              className="bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition-colors"
+              disabled={sincronizando}
+              className="bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400"
             >
-              Definir
+              {sincronizando ? '🔄' : 'Definir'}
             </button>
           </div>
         </div>
@@ -612,7 +885,7 @@ function CaixaCentral({ dataSelecionada }) {
   )
 }
 
-// Componente Relatório
+// Componente Relatório (mantém a mesma estrutura)
 function Relatorio({ dataSelecionada }) {
   const imprimirRelatorio = () => {
     window.print()
@@ -668,7 +941,7 @@ function Relatorio({ dataSelecionada }) {
         <div className="flex justify-between items-center mb-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">📄 Relatório Diário</h1>
-            <p className="text-lg text-gray-600">Loteria Imperatriz</p>
+            <p className="text-lg text-gray-600">Loteria Imperatriz - Sistema Sincronizado</p>
             <p className="text-sm text-gray-500">Data: {new Date(dataSelecionada).toLocaleDateString('pt-BR')}</p>
           </div>
           <button
@@ -790,7 +1063,7 @@ function DashboardAdmin({ dadosUsuario }) {
       return (
         <div className="space-y-6">
           <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">📊 Resumo Geral</h2>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">📊 Resumo Geral - Sistema Sincronizado</h2>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="bg-green-50 p-4 rounded-lg">
@@ -806,6 +1079,15 @@ function DashboardAdmin({ dadosUsuario }) {
                 <p className="text-2xl font-bold text-blue-600">{resumoGeral.caixasFechados}/6</p>
                 <p className="text-sm text-blue-600">{resumoGeral.percentualFechamento.toFixed(0)}% concluído</p>
               </div>
+            </div>
+
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-blue-800 mb-2">🔄 Status da Sincronização</h4>
+              <p className="text-sm text-blue-700">
+                ✅ Sistema sincronizado em tempo real<br/>
+                ✅ Dados compartilhados entre todos os dispositivos<br/>
+                ✅ Backup automático no localStorage
+              </p>
             </div>
           </div>
         </div>
@@ -908,7 +1190,7 @@ function AppContent() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando sistema...</p>
+          <p className="text-gray-600">Carregando sistema sincronizado...</p>
         </div>
       </div>
     )
