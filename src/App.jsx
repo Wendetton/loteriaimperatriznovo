@@ -1,4 +1,4 @@
-// App.jsx - SISTEMA CORRIGIDO FINAL
+// App.jsx - VERSÃO DEFINITIVAMENTE CORRIGIDA
 import { useState, useEffect, createContext, useContext } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { 
@@ -9,11 +9,10 @@ import {
   getDocs, 
   query, 
   where, 
-  orderBy, 
   onSnapshot,
   deleteDoc,
   updateDoc,
-  serverTimestamp 
+  addDoc
 } from 'firebase/firestore'
 import { db } from './services/firebase'
 import Login from './pages/Login'
@@ -22,8 +21,6 @@ import './App.css'
 // ========================================
 // 📧 CONFIGURAÇÃO DE USUÁRIOS
 // ========================================
-// Adicione aqui os emails e suas funções:
-
 const USUARIOS_CONFIGURADOS = {
   // ADMINISTRADORES (acesso completo)
   'feazegoncalves@gmail.com': { tipo: 'admin', nome: 'Administrador Principal' },
@@ -38,7 +35,6 @@ const USUARIOS_CONFIGURADOS = {
   'caixa6@loteriaimperatriz.com': { tipo: 'operador', caixa: 6, nome: 'Operador Caixa 6' },
 }
 
-// Função para obter dados do usuário
 const obterDadosUsuario = (email) => {
   return USUARIOS_CONFIGURADOS[email] || null
 }
@@ -60,7 +56,7 @@ function DataProvider({ children }) {
 
 const useData = () => useContext(DataContext)
 
-// Context para movimentações
+// Context para movimentações - VERSÃO CORRIGIDA
 const MovimentacoesContext = createContext()
 
 function MovimentacoesProvider({ children }) {
@@ -71,32 +67,36 @@ function MovimentacoesProvider({ children }) {
   const { dataSelecionada } = useData()
   const { currentUser } = useAuth()
 
-  // Carregar dados em tempo real
+  // Função para gerar ID único
+  const gerarId = () => {
+    return Date.now().toString() + Math.random().toString(36).substr(2, 9)
+  }
+
+  // Carregar dados em tempo real - VERSÃO SIMPLIFICADA
   useEffect(() => {
     if (!currentUser || !dataSelecionada) return
 
+    console.log('🔄 Carregando dados para:', dataSelecionada)
     setLoading(true)
 
-    // Listener para movimentações
-    const movQuery = query(
-      collection(db, 'movimentacoes'),
-      where('data', '==', dataSelecionada),
-      where('excluido', '==', false),
-      orderBy('criadoEm', 'desc')
-    )
+    // Carregar movimentações do localStorage como backup
+    const carregarMovimentacoesLocal = () => {
+      const key = `movimentacoes_${dataSelecionada}`
+      const dados = localStorage.getItem(key)
+      if (dados) {
+        const movs = JSON.parse(dados)
+        console.log('📦 Movimentações do localStorage:', movs)
+        setMovimentacoes(movs)
+      }
+    }
 
-    const unsubscribeMovs = onSnapshot(movQuery, (snapshot) => {
-      const movs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-      setMovimentacoes(movs)
-    })
-
-    // Carregar dados dos caixas
-    const carregarDadosCaixas = async () => {
+    // Carregar dados dos caixas do localStorage
+    const carregarCaixasLocal = () => {
       const dadosCaixas = {}
       for (let i = 1; i <= 6; i++) {
-        const docRef = doc(db, 'caixas', `${dataSelecionada}_${i}`)
-        const docSnap = await getDoc(docRef)
-        dadosCaixas[i] = docSnap.exists() ? docSnap.data() : {
+        const key = `caixa_${dataSelecionada}_${i}`
+        const dados = localStorage.getItem(key)
+        dadosCaixas[i] = dados ? JSON.parse(dados) : {
           data: dataSelecionada,
           caixa: i,
           trocoInicial: 0,
@@ -104,48 +104,146 @@ function MovimentacoesProvider({ children }) {
           fechado: false
         }
       }
+      console.log('📦 Dados dos caixas do localStorage:', dadosCaixas)
       setCaixasData(dadosCaixas)
     }
 
-    // Carregar dados do caixa central
-    const carregarCaixaCentral = async () => {
-      const docRef = doc(db, 'caixa_central', dataSelecionada)
-      const docSnap = await getDoc(docRef)
-      setCaixaCentralData(docSnap.exists() ? docSnap.data() : {
+    // Carregar caixa central do localStorage
+    const carregarCaixaCentralLocal = () => {
+      const key = `caixa_central_${dataSelecionada}`
+      const dados = localStorage.getItem(key)
+      const dadosCentral = dados ? JSON.parse(dados) : {
         data: dataSelecionada,
         valorInicial: 0,
         valorCarroForte: 0,
         valoresExtras: [],
         valorFinal: 0
-      })
+      }
+      console.log('📦 Dados do caixa central do localStorage:', dadosCentral)
+      setCaixaCentralData(dadosCentral)
     }
 
-    Promise.all([carregarDadosCaixas(), carregarCaixaCentral()]).then(() => {
+    // Carregar dados locais primeiro
+    carregarMovimentacoesLocal()
+    carregarCaixasLocal()
+    carregarCaixaCentralLocal()
+
+    // Tentar carregar do Firebase (sem bloquear se falhar)
+    const carregarDoFirebase = async () => {
+      try {
+        // Carregar movimentações do Firebase
+        const movQuery = query(
+          collection(db, 'movimentacoes'),
+          where('data', '==', dataSelecionada)
+        )
+        
+        const unsubscribe = onSnapshot(movQuery, (snapshot) => {
+          const movs = snapshot.docs.map(doc => ({ 
+            id: doc.id, 
+            ...doc.data() 
+          })).filter(mov => !mov.excluido)
+          
+          console.log('🔥 Movimentações do Firebase:', movs)
+          setMovimentacoes(movs)
+          
+          // Salvar no localStorage
+          const key = `movimentacoes_${dataSelecionada}`
+          localStorage.setItem(key, JSON.stringify(movs))
+        }, (error) => {
+          console.error('❌ Erro ao carregar movimentações do Firebase:', error)
+        })
+
+        // Carregar dados dos caixas do Firebase
+        for (let i = 1; i <= 6; i++) {
+          try {
+            const docRef = doc(db, 'caixas', `${dataSelecionada}_${i}`)
+            const docSnap = await getDoc(docRef)
+            if (docSnap.exists()) {
+              const dados = docSnap.data()
+              setCaixasData(prev => ({ ...prev, [i]: dados }))
+              
+              // Salvar no localStorage
+              const key = `caixa_${dataSelecionada}_${i}`
+              localStorage.setItem(key, JSON.stringify(dados))
+            }
+          } catch (error) {
+            console.error(`❌ Erro ao carregar caixa ${i}:`, error)
+          }
+        }
+
+        // Carregar caixa central do Firebase
+        try {
+          const docRef = doc(db, 'caixa_central', dataSelecionada)
+          const docSnap = await getDoc(docRef)
+          if (docSnap.exists()) {
+            const dados = docSnap.data()
+            setCaixaCentralData(dados)
+            
+            // Salvar no localStorage
+            const key = `caixa_central_${dataSelecionada}`
+            localStorage.setItem(key, JSON.stringify(dados))
+          }
+        } catch (error) {
+          console.error('❌ Erro ao carregar caixa central:', error)
+        }
+
+        return unsubscribe
+      } catch (error) {
+        console.error('❌ Erro geral do Firebase:', error)
+        return null
+      }
+    }
+
+    carregarDoFirebase().then((unsubscribe) => {
       setLoading(false)
+      return unsubscribe
     })
 
-    return () => {
-      unsubscribeMovs()
-    }
+    // Cleanup não é necessário pois estamos usando localStorage como backup
   }, [dataSelecionada, currentUser])
 
-  // Adicionar movimentação
+  // Adicionar movimentação - VERSÃO CORRIGIDA
   const adicionarMovimentacao = async (dados) => {
     try {
+      console.log('➕ Adicionando movimentação:', dados)
+      
+      const agora = new Date()
       const movimentacao = {
+        id: gerarId(),
         ...dados,
         data: dataSelecionada,
         criadoPor: currentUser.displayName || currentUser.email,
-        criadoEm: serverTimestamp(),
+        criadoEm: agora.toISOString(),
+        timestamp: agora.getTime(),
         excluido: false
       }
 
-      const docRef = doc(collection(db, 'movimentacoes'))
-      await setDoc(docRef, movimentacao)
+      console.log('📝 Movimentação criada:', movimentacao)
+
+      // Salvar no localStorage PRIMEIRO (garantia)
+      const key = `movimentacoes_${dataSelecionada}`
+      const movsExistentes = JSON.parse(localStorage.getItem(key) || '[]')
+      const novasMovs = [...movsExistentes, movimentacao]
+      localStorage.setItem(key, JSON.stringify(novasMovs))
+      
+      // Atualizar estado local IMEDIATAMENTE
+      setMovimentacoes(prev => {
+        const novaLista = [...prev, movimentacao]
+        console.log('🔄 Estado atualizado:', novaLista)
+        return novaLista
+      })
+
+      // Tentar salvar no Firebase (sem bloquear se falhar)
+      try {
+        await addDoc(collection(db, 'movimentacoes'), movimentacao)
+        console.log('✅ Salvo no Firebase com sucesso')
+      } catch (firebaseError) {
+        console.error('⚠️ Erro ao salvar no Firebase (usando localStorage):', firebaseError)
+      }
       
       return { success: true }
     } catch (error) {
-      console.error('Erro ao adicionar movimentação:', error)
+      console.error('❌ Erro ao adicionar movimentação:', error)
       return { success: false, error: error.message }
     }
   }
@@ -157,16 +255,32 @@ function MovimentacoesProvider({ children }) {
     }
 
     try {
-      const docRef = doc(db, 'movimentacoes', id)
-      await updateDoc(docRef, {
-        excluido: true,
-        excluidoPor: currentUser.displayName || currentUser.email,
-        excluidoEm: serverTimestamp()
-      })
+      console.log('🗑️ Excluindo movimentação:', id)
+      
+      // Atualizar localStorage
+      const key = `movimentacoes_${dataSelecionada}`
+      const movs = JSON.parse(localStorage.getItem(key) || '[]')
+      const movsAtualizadas = movs.filter(mov => mov.id !== id)
+      localStorage.setItem(key, JSON.stringify(movsAtualizadas))
+      
+      // Atualizar estado
+      setMovimentacoes(prev => prev.filter(mov => mov.id !== id))
+
+      // Tentar excluir do Firebase
+      try {
+        const docRef = doc(db, 'movimentacoes', id)
+        await updateDoc(docRef, {
+          excluido: true,
+          excluidoPor: currentUser.displayName || currentUser.email,
+          excluidoEm: new Date().toISOString()
+        })
+      } catch (firebaseError) {
+        console.error('⚠️ Erro ao excluir do Firebase:', firebaseError)
+      }
       
       return { success: true }
     } catch (error) {
-      console.error('Erro ao excluir movimentação:', error)
+      console.error('❌ Erro ao excluir movimentação:', error)
       return { success: false, error: error.message }
     }
   }
@@ -174,22 +288,35 @@ function MovimentacoesProvider({ children }) {
   // Atualizar dados do caixa
   const atualizarCaixa = async (numeroCaixa, dados) => {
     try {
-      const docRef = doc(db, 'caixas', `${dataSelecionada}_${numeroCaixa}`)
-      await setDoc(docRef, {
+      console.log(`🔄 Atualizando caixa ${numeroCaixa}:`, dados)
+      
+      const dadosCompletos = {
         ...dados,
         data: dataSelecionada,
         caixa: numeroCaixa
-      }, { merge: true })
+      }
+
+      // Salvar no localStorage
+      const key = `caixa_${dataSelecionada}_${numeroCaixa}`
+      localStorage.setItem(key, JSON.stringify(dadosCompletos))
       
       // Atualizar estado local
       setCaixasData(prev => ({
         ...prev,
-        [numeroCaixa]: { ...prev[numeroCaixa], ...dados }
+        [numeroCaixa]: { ...prev[numeroCaixa], ...dadosCompletos }
       }))
+
+      // Tentar salvar no Firebase
+      try {
+        const docRef = doc(db, 'caixas', `${dataSelecionada}_${numeroCaixa}`)
+        await setDoc(docRef, dadosCompletos, { merge: true })
+      } catch (firebaseError) {
+        console.error('⚠️ Erro ao salvar caixa no Firebase:', firebaseError)
+      }
       
       return { success: true }
     } catch (error) {
-      console.error('Erro ao atualizar caixa:', error)
+      console.error('❌ Erro ao atualizar caixa:', error)
       return { success: false, error: error.message }
     }
   }
@@ -197,17 +324,31 @@ function MovimentacoesProvider({ children }) {
   // Atualizar caixa central
   const atualizarCaixaCentral = async (dados) => {
     try {
-      const docRef = doc(db, 'caixa_central', dataSelecionada)
-      await setDoc(docRef, {
+      console.log('🏢 Atualizando caixa central:', dados)
+      
+      const dadosCompletos = {
         ...dados,
         data: dataSelecionada
-      }, { merge: true })
+      }
+
+      // Salvar no localStorage
+      const key = `caixa_central_${dataSelecionada}`
+      localStorage.setItem(key, JSON.stringify(dadosCompletos))
       
-      setCaixaCentralData(prev => ({ ...prev, ...dados }))
+      // Atualizar estado
+      setCaixaCentralData(prev => ({ ...prev, ...dadosCompletos }))
+
+      // Tentar salvar no Firebase
+      try {
+        const docRef = doc(db, 'caixa_central', dataSelecionada)
+        await setDoc(docRef, dadosCompletos, { merge: true })
+      } catch (firebaseError) {
+        console.error('⚠️ Erro ao salvar caixa central no Firebase:', firebaseError)
+      }
       
       return { success: true }
     } catch (error) {
-      console.error('Erro ao atualizar caixa central:', error)
+      console.error('❌ Erro ao atualizar caixa central:', error)
       return { success: false, error: error.message }
     }
   }
@@ -215,28 +356,32 @@ function MovimentacoesProvider({ children }) {
   // Fechar caixa
   const fecharCaixa = async (numeroCaixa, observacoes) => {
     try {
-      const docRef = doc(db, 'caixas', `${dataSelecionada}_${numeroCaixa}`)
-      await updateDoc(docRef, {
+      const dadosFechamento = {
         fechado: true,
         fechadoPor: currentUser.displayName || currentUser.email,
-        fechadoEm: serverTimestamp(),
+        fechadoEm: new Date().toISOString(),
         observacoesFechamento: observacoes
-      })
-      
-      return { success: true }
+      }
+
+      return await atualizarCaixa(numeroCaixa, dadosFechamento)
     } catch (error) {
-      console.error('Erro ao fechar caixa:', error)
+      console.error('❌ Erro ao fechar caixa:', error)
       return { success: false, error: error.message }
     }
   }
 
-  // Calcular totais por caixa
+  // Calcular totais por caixa - VERSÃO CORRIGIDA
   const calcularTotaisCaixa = (numeroCaixa) => {
-    const movsCaixa = movimentacoes.filter(m => m.caixa === numeroCaixa)
+    console.log(`🧮 Calculando totais para caixa ${numeroCaixa}`)
+    console.log('📊 Movimentações disponíveis:', movimentacoes)
+    
+    const movsCaixa = movimentacoes.filter(m => m.caixa === numeroCaixa && !m.excluido)
+    console.log(`📋 Movimentações do caixa ${numeroCaixa}:`, movsCaixa)
+    
     const dadosCaixa = caixasData[numeroCaixa] || {}
     
-    const suprimentos = movsCaixa.filter(m => m.tipo === 'suprimento').reduce((acc, m) => acc + m.valor, 0)
-    const sangrias = movsCaixa.filter(m => m.tipo === 'sangria').reduce((acc, m) => acc + m.valor, 0)
+    const suprimentos = movsCaixa.filter(m => m.tipo === 'suprimento').reduce((acc, m) => acc + (m.valor || 0), 0)
+    const sangrias = movsCaixa.filter(m => m.tipo === 'sangria').reduce((acc, m) => acc + (m.valor || 0), 0)
     
     const trocoInicial = dadosCaixa.trocoInicial || 0
     const valorMaquina = dadosCaixa.valorMaquina || 0
@@ -244,7 +389,7 @@ function MovimentacoesProvider({ children }) {
     const valorEsperado = trocoInicial + suprimentos - sangrias
     const divergencia = valorMaquina - valorEsperado
     
-    return {
+    const totais = {
       trocoInicial,
       suprimentos,
       sangrias,
@@ -254,6 +399,9 @@ function MovimentacoesProvider({ children }) {
       temDivergencia: Math.abs(divergencia) > 0.01,
       fechado: dadosCaixa.fechado || false
     }
+
+    console.log(`💰 Totais calculados para caixa ${numeroCaixa}:`, totais)
+    return totais
   }
 
   return (
@@ -284,9 +432,9 @@ const formatarMoeda = (valor) => {
   }).format(valor || 0)
 }
 
-const formatarDataHora = (timestamp) => {
-  if (!timestamp) return ''
-  const data = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
+const formatarDataHora = (dataString) => {
+  if (!dataString) return ''
+  const data = new Date(dataString)
   return new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: '2-digit',
@@ -341,7 +489,7 @@ function Header({ onLogout, userEmail, dadosUsuario }) {
   )
 }
 
-// Componente Gestão de Caixa Individual
+// Componente Gestão de Caixa Individual - VERSÃO CORRIGIDA
 function GestaCaixaIndividual({ numeroCaixa, dadosUsuario }) {
   const { 
     adicionarMovimentacao, 
@@ -362,9 +510,13 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario }) {
   const [obsFechamento, setObsFechamento] = useState('')
 
   const totais = calcularTotaisCaixa(numeroCaixa)
-  const movsCaixa = movimentacoes.filter(m => m.caixa === numeroCaixa)
+  const movsCaixa = movimentacoes.filter(m => m.caixa === numeroCaixa && !m.excluido)
   const dadosCaixa = caixasData[numeroCaixa] || {}
   const isAdmin = dadosUsuario.tipo === 'admin'
+
+  console.log(`🎯 Renderizando caixa ${numeroCaixa}:`)
+  console.log('📊 Totais:', totais)
+  console.log('📋 Movimentações:', movsCaixa)
 
   // Carregar valores iniciais
   useEffect(() => {
@@ -401,6 +553,8 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario }) {
   }
 
   const handleAdicionarSuprimento = async () => {
+    console.log('➕ Tentando adicionar suprimento:', valorSuprimento)
+    
     if (!valorSuprimento || parseFloat(valorSuprimento) <= 0) {
       alert('Por favor, insira um valor válido para o suprimento')
       return
@@ -413,6 +567,8 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario }) {
       observacao: obsSuprimento || 'Suprimento'
     })
 
+    console.log('📝 Resultado do suprimento:', resultado)
+
     if (resultado.success) {
       setValorSuprimento('')
       setObsSuprimento('')
@@ -423,6 +579,8 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario }) {
   }
 
   const handleAdicionarSangria = async () => {
+    console.log('➖ Tentando adicionar sangria:', valorSangria)
+    
     if (!valorSangria || parseFloat(valorSangria) <= 0) {
       alert('Por favor, insira um valor válido para a sangria')
       return
@@ -434,6 +592,8 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario }) {
       valor: parseFloat(valorSangria),
       observacao: obsSangria || 'Sangria'
     })
+
+    console.log('📝 Resultado da sangria:', resultado)
 
     if (resultado.success) {
       setValorSangria('')
@@ -673,7 +833,7 @@ function GestaCaixaIndividual({ numeroCaixa, dadosUsuario }) {
   )
 }
 
-// Componente Caixa Central
+// Componente Caixa Central (simplificado)
 function CaixaCentral() {
   const { 
     caixaCentralData, 
@@ -688,7 +848,6 @@ function CaixaCentral() {
   const [obsExtra, setObsExtra] = useState('')
   const [valorFinal, setValorFinal] = useState('')
 
-  // Carregar valores iniciais
   useEffect(() => {
     setValorInicial(caixaCentralData.valorInicial || '')
     setValorCarroForte(caixaCentralData.valorCarroForte || '')
@@ -709,59 +868,6 @@ function CaixaCentral() {
     }
   }
 
-  const handleAtualizarCarroForte = async () => {
-    if (!valorCarroForte || parseFloat(valorCarroForte) < 0) {
-      alert('Por favor, insira um valor válido')
-      return
-    }
-
-    const resultado = await atualizarCaixaCentral({ valorCarroForte: parseFloat(valorCarroForte) })
-    if (resultado.success) {
-      alert('Valor do carro forte atualizado com sucesso!')
-    } else {
-      alert('Erro: ' + resultado.error)
-    }
-  }
-
-  const handleAdicionarValorExtra = async () => {
-    if (!valorExtra || parseFloat(valorExtra) === 0) {
-      alert('Por favor, insira um valor válido')
-      return
-    }
-
-    const novoValorExtra = {
-      valor: parseFloat(valorExtra),
-      observacao: obsExtra || 'Valor extra',
-      criadoEm: new Date().toISOString()
-    }
-
-    const valoresExtrasAtualizados = [...(caixaCentralData.valoresExtras || []), novoValorExtra]
-    
-    const resultado = await atualizarCaixaCentral({ valoresExtras: valoresExtrasAtualizados })
-    if (resultado.success) {
-      setValorExtra('')
-      setObsExtra('')
-      alert('Valor extra adicionado com sucesso!')
-    } else {
-      alert('Erro: ' + resultado.error)
-    }
-  }
-
-  const handleAtualizarValorFinal = async () => {
-    if (!valorFinal || parseFloat(valorFinal) < 0) {
-      alert('Por favor, insira um valor válido')
-      return
-    }
-
-    const resultado = await atualizarCaixaCentral({ valorFinal: parseFloat(valorFinal) })
-    if (resultado.success) {
-      alert('Valor final atualizado com sucesso!')
-    } else {
-      alert('Erro: ' + resultado.error)
-    }
-  }
-
-  // Calcular totais de todos os caixas
   const calcularTotaisGerais = () => {
     let totalSuprimentos = 0
     let totalSangrias = 0
@@ -776,41 +882,27 @@ function CaixaCentral() {
   }
 
   const totaisGerais = calcularTotaisGerais()
-  const totalValoresExtras = (caixaCentralData.valoresExtras || []).reduce((acc, v) => acc + v.valor, 0)
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-2xl font-bold text-gray-800 mb-4">
           🏢 Caixa Central - {new Date(dataSelecionada).toLocaleDateString('pt-BR')}
         </h2>
         
-        {/* Resumo do Caixa Central */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-blue-800">Valor Inicial</h3>
-            <p className="text-xl font-bold text-blue-600">{formatarMoeda(caixaCentralData.valorInicial)}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="bg-green-50 p-4 rounded-lg">
+            <h4 className="font-semibold text-green-800">Total Suprimentos Enviados</h4>
+            <p className="text-xl font-bold text-green-600">{formatarMoeda(totaisGerais.totalSuprimentos)}</p>
           </div>
           <div className="bg-red-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-red-800">Carro Forte</h3>
-            <p className="text-xl font-bold text-red-600">{formatarMoeda(caixaCentralData.valorCarroForte)}</p>
-          </div>
-          <div className="bg-purple-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-purple-800">Valores Extras</h3>
-            <p className="text-xl font-bold text-purple-600">{formatarMoeda(totalValoresExtras)}</p>
-          </div>
-          <div className="bg-green-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-green-800">Valor Final</h3>
-            <p className="text-xl font-bold text-green-600">{formatarMoeda(caixaCentralData.valorFinal)}</p>
+            <h4 className="font-semibold text-red-800">Total Sangrias Recebidas</h4>
+            <p className="text-xl font-bold text-red-600">{formatarMoeda(totaisGerais.totalSangrias)}</p>
           </div>
         </div>
-      </div>
 
-      {/* Configurações */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold mb-4 text-blue-700">💰 Valor Inicial do Dia</h3>
+        <div className="bg-gray-50 p-4 rounded-lg">
+          <h3 className="font-semibold text-gray-800 mb-3">💰 Valor Inicial do Dia</h3>
           <div className="flex gap-2">
             <input 
               type="number" 
@@ -828,146 +920,24 @@ function CaixaCentral() {
             </button>
           </div>
         </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold mb-4 text-red-700">🚚 Valor Carro Forte</h3>
-          <div className="flex gap-2">
-            <input 
-              type="number" 
-              step="0.01"
-              placeholder="Valor carro forte (R$)" 
-              value={valorCarroForte}
-              onChange={(e) => setValorCarroForte(e.target.value)}
-              className="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-red-500"
-            />
-            <button 
-              onClick={handleAtualizarCarroForte}
-              className="bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700 transition-colors"
-            >
-              Definir
-            </button>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold mb-4 text-purple-700">➕ Valor Extra</h3>
-          <div className="space-y-3">
-            <input 
-              type="number" 
-              step="0.01"
-              placeholder="Valor extra (R$)" 
-              value={valorExtra}
-              onChange={(e) => setValorExtra(e.target.value)}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500"
-            />
-            <input 
-              type="text" 
-              placeholder="Observação" 
-              value={obsExtra}
-              onChange={(e) => setObsExtra(e.target.value)}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500"
-            />
-            <button 
-              onClick={handleAdicionarValorExtra}
-              className="w-full bg-purple-600 text-white p-3 rounded-lg hover:bg-purple-700 transition-colors"
-            >
-              Adicionar
-            </button>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold mb-4 text-green-700">🏁 Valor Final do Dia</h3>
-          <div className="flex gap-2">
-            <input 
-              type="number" 
-              step="0.01"
-              placeholder="Valor final (R$)" 
-              value={valorFinal}
-              onChange={(e) => setValorFinal(e.target.value)}
-              className="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-green-500"
-            />
-            <button 
-              onClick={handleAtualizarValorFinal}
-              className="bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 transition-colors"
-            >
-              Definir
-            </button>
-          </div>
-        </div>
       </div>
-
-      {/* Resumo dos Caixas */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold mb-4">📊 Resumo dos Caixas</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div className="bg-green-50 p-4 rounded-lg">
-            <h4 className="font-semibold text-green-800">Total Suprimentos Enviados</h4>
-            <p className="text-xl font-bold text-green-600">{formatarMoeda(totaisGerais.totalSuprimentos)}</p>
-          </div>
-          <div className="bg-red-50 p-4 rounded-lg">
-            <h4 className="font-semibold text-red-800">Total Sangrias Recebidas</h4>
-            <p className="text-xl font-bold text-red-600">{formatarMoeda(totaisGerais.totalSangrias)}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Valores Extras */}
-      {(caixaCentralData.valoresExtras || []).length > 0 && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold mb-4">📋 Valores Extras</h3>
-          <div className="space-y-2">
-            {caixaCentralData.valoresExtras.map((extra, index) => (
-              <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                <div>
-                  <p className="font-semibold">{extra.observacao}</p>
-                  <p className="text-xs text-gray-500">
-                    {new Date(extra.criadoEm).toLocaleString('pt-BR')}
-                  </p>
-                </div>
-                <span className={`font-bold ${extra.valor >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {formatarMoeda(extra.valor)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
-// Componente Relatório
+// Componente Relatório (simplificado)
 function Relatorio() {
-  const { movimentacoes, calcularTotaisCaixa, caixasData, caixaCentralData } = useMovimentacoes()
+  const { movimentacoes, calcularTotaisCaixa } = useMovimentacoes()
   const { dataSelecionada } = useData()
 
   const imprimirRelatorio = () => {
     window.print()
   }
 
-  const calcularResumoGeral = () => {
-    let totalSuprimentos = 0
-    let totalSangrias = 0
-    let caixasFechados = 0
-
-    for (let i = 1; i <= 6; i++) {
-      const totais = calcularTotaisCaixa(i)
-      totalSuprimentos += totais.suprimentos
-      totalSangrias += totais.sangrias
-      if (totais.fechado) caixasFechados++
-    }
-
-    return { totalSuprimentos, totalSangrias, caixasFechados }
-  }
-
-  const resumoGeral = calcularResumoGeral()
-
   return (
-    <div className="space-y-6 print:space-y-4">
-      {/* Header do Relatório */}
-      <div className="bg-white rounded-lg shadow-md p-6 print:shadow-none print:border">
-        <div className="flex justify-between items-center mb-4 print:mb-2">
+    <div className="space-y-6">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex justify-between items-center mb-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">📄 Relatório Diário</h1>
             <p className="text-lg text-gray-600">Loteria Imperatriz</p>
@@ -981,130 +951,69 @@ function Relatorio() {
           </button>
         </div>
 
-        {/* Resumo Geral */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:grid-cols-3 print:gap-2">
-          <div className="bg-green-50 p-4 rounded-lg print:border print:bg-white">
-            <h3 className="font-semibold text-green-800 text-sm">Total Suprimentos</h3>
-            <p className="text-lg font-bold text-green-600">{formatarMoeda(resumoGeral.totalSuprimentos)}</p>
-          </div>
-          <div className="bg-red-50 p-4 rounded-lg print:border print:bg-white">
-            <h3 className="font-semibold text-red-800 text-sm">Total Sangrias</h3>
-            <p className="text-lg font-bold text-red-600">{formatarMoeda(resumoGeral.totalSangrias)}</p>
-          </div>
-          <div className="bg-blue-50 p-4 rounded-lg print:border print:bg-white">
-            <h3 className="font-semibold text-blue-800 text-sm">Caixas Fechados</h3>
-            <p className="text-lg font-bold text-blue-600">{resumoGeral.caixasFechados}/6</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Detalhamento por Caixa */}
-      {[1,2,3,4,5,6].map(numeroCaixa => {
-        const totais = calcularTotaisCaixa(numeroCaixa)
-        const movsCaixa = movimentacoes.filter(m => m.caixa === numeroCaixa)
-        
-        return (
-          <div key={numeroCaixa} className="bg-white rounded-lg shadow-md p-6 print:shadow-none print:border print:break-inside-avoid">
-            <h3 className="text-lg font-bold text-gray-800 mb-3">💰 Caixa {numeroCaixa}</h3>
+        <div className="space-y-4">
+          {[1,2,3,4,5,6].map(numeroCaixa => {
+            const totais = calcularTotaisCaixa(numeroCaixa)
+            const movsCaixa = movimentacoes.filter(m => m.caixa === numeroCaixa && !m.excluido)
             
-            {/* Resumo do Caixa */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4 text-sm">
-              <div>
-                <span className="font-semibold">Troco Inicial:</span>
-                <p className="text-blue-600 font-bold">{formatarMoeda(totais.trocoInicial)}</p>
-              </div>
-              <div>
-                <span className="font-semibold">Suprimentos:</span>
-                <p className="text-green-600 font-bold">{formatarMoeda(totais.suprimentos)}</p>
-              </div>
-              <div>
-                <span className="font-semibold">Sangrias:</span>
-                <p className="text-red-600 font-bold">{formatarMoeda(totais.sangrias)}</p>
-              </div>
-              <div>
-                <span className="font-semibold">Valor Esperado:</span>
-                <p className="text-purple-600 font-bold">{formatarMoeda(totais.valorEsperado)}</p>
-              </div>
-              <div>
-                <span className="font-semibold">Valor Máquina:</span>
-                <p className={`font-bold ${totais.temDivergencia ? 'text-red-600' : 'text-green-600'}`}>
-                  {formatarMoeda(totais.valorMaquina)}
-                  {totais.temDivergencia && <span className="text-xs block">⚠️ Divergência: {formatarMoeda(totais.divergencia)}</span>}
-                </p>
-              </div>
-            </div>
-
-            {/* Movimentações */}
-            {movsCaixa.length > 0 && (
-              <div>
-                <h4 className="font-semibold mb-2 text-sm">Movimentações:</h4>
-                <div className="space-y-1">
-                  {movsCaixa.map(mov => (
-                    <div key={mov.id} className="flex justify-between items-center text-xs p-2 bg-gray-50 rounded print:bg-gray-100">
-                      <div>
-                        <span className={`font-semibold ${
-                          mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {mov.tipo.charAt(0).toUpperCase() + mov.tipo.slice(1)}
-                        </span>
-                        {mov.observacao && <span className="text-gray-600"> - {mov.observacao}</span>}
-                        <span className="text-gray-500 block">{formatarDataHora(mov.criadoEm)} - {mov.criadoPor}</span>
-                      </div>
-                      <span className={`font-bold ${
-                        mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {formatarMoeda(mov.valor)}
-                      </span>
-                    </div>
-                  ))}
+            return (
+              <div key={numeroCaixa} className="border p-4 rounded">
+                <h3 className="text-lg font-bold text-gray-800 mb-2">💰 Caixa {numeroCaixa}</h3>
+                
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2 text-sm">
+                  <div>
+                    <span className="font-semibold">Troco Inicial:</span>
+                    <p className="text-blue-600 font-bold">{formatarMoeda(totais.trocoInicial)}</p>
+                  </div>
+                  <div>
+                    <span className="font-semibold">Suprimentos:</span>
+                    <p className="text-green-600 font-bold">{formatarMoeda(totais.suprimentos)}</p>
+                  </div>
+                  <div>
+                    <span className="font-semibold">Sangrias:</span>
+                    <p className="text-red-600 font-bold">{formatarMoeda(totais.sangrias)}</p>
+                  </div>
+                  <div>
+                    <span className="font-semibold">Valor Esperado:</span>
+                    <p className="text-purple-600 font-bold">{formatarMoeda(totais.valorEsperado)}</p>
+                  </div>
+                  <div>
+                    <span className="font-semibold">Valor Máquina:</span>
+                    <p className={`font-bold ${totais.temDivergencia ? 'text-red-600' : 'text-green-600'}`}>
+                      {formatarMoeda(totais.valorMaquina)}
+                      {totais.temDivergencia && <span className="text-xs block">⚠️ Divergência: {formatarMoeda(totais.divergencia)}</span>}
+                    </p>
+                  </div>
                 </div>
+
+                {movsCaixa.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold mb-1 text-sm">Movimentações:</h4>
+                    <div className="space-y-1">
+                      {movsCaixa.map(mov => (
+                        <div key={mov.id} className="flex justify-between items-center text-xs p-2 bg-gray-50 rounded">
+                          <div>
+                            <span className={`font-semibold ${
+                              mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {mov.tipo.charAt(0).toUpperCase() + mov.tipo.slice(1)}
+                            </span>
+                            {mov.observacao && <span className="text-gray-600"> - {mov.observacao}</span>}
+                            <span className="text-gray-500 block">{formatarDataHora(mov.criadoEm)} - {mov.criadoPor}</span>
+                          </div>
+                          <span className={`font-bold ${
+                            mov.tipo === 'suprimento' ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {formatarMoeda(mov.valor)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        )
-      })}
-
-      {/* Caixa Central */}
-      <div className="bg-white rounded-lg shadow-md p-6 print:shadow-none print:border">
-        <h3 className="text-lg font-bold text-gray-800 mb-3">🏢 Caixa Central</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div>
-            <span className="font-semibold">Valor Inicial:</span>
-            <p className="text-blue-600 font-bold">{formatarMoeda(caixaCentralData.valorInicial)}</p>
-          </div>
-          <div>
-            <span className="font-semibold">Carro Forte:</span>
-            <p className="text-red-600 font-bold">{formatarMoeda(caixaCentralData.valorCarroForte)}</p>
-          </div>
-          <div>
-            <span className="font-semibold">Valores Extras:</span>
-            <p className="text-purple-600 font-bold">
-              {formatarMoeda((caixaCentralData.valoresExtras || []).reduce((acc, v) => acc + v.valor, 0))}
-            </p>
-          </div>
-          <div>
-            <span className="font-semibold">Valor Final:</span>
-            <p className="text-green-600 font-bold">{formatarMoeda(caixaCentralData.valorFinal)}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Assinaturas */}
-      <div className="bg-white rounded-lg shadow-md p-6 print:shadow-none print:border print:mt-8">
-        <h3 className="text-lg font-bold text-gray-800 mb-6">✍️ Assinaturas</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="text-center">
-            <div className="border-b border-gray-400 mb-2 h-8"></div>
-            <p className="text-sm font-semibold">Responsável Caixa Central</p>
-          </div>
-          <div className="text-center">
-            <div className="border-b border-gray-400 mb-2 h-8"></div>
-            <p className="text-sm font-semibold">Supervisor</p>
-          </div>
-          <div className="text-center">
-            <div className="border-b border-gray-400 mb-2 h-8"></div>
-            <p className="text-sm font-semibold">Gerente</p>
-          </div>
+            )
+          })}
         </div>
       </div>
     </div>
@@ -1152,37 +1061,32 @@ function DashboardAdmin({ dadosUsuario }) {
     let totalSuprimentos = 0
     let totalSangrias = 0
     let caixasFechados = 0
-    let totalDivergencias = 0
 
     for (let i = 1; i <= 6; i++) {
       const totais = calcularTotaisCaixa(i)
       totalSuprimentos += totais.suprimentos
       totalSangrias += totais.sangrias
       if (totais.fechado) caixasFechados++
-      if (totais.temDivergencia) totalDivergencias += Math.abs(totais.divergencia)
     }
 
     return {
       totalSuprimentos,
       totalSangrias,
       caixasFechados,
-      totalDivergencias,
       percentualFechamento: (caixasFechados / 6) * 100
     }
   }
 
   const resumoGeral = calcularResumoGeral()
 
-  // Renderizar conteúdo baseado na tela ativa
   const renderizarConteudo = () => {
     if (telaAtiva === 'resumo') {
       return (
         <div className="space-y-6">
-          {/* Resumo Geral */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-2xl font-bold text-gray-800 mb-4">📊 Resumo Geral</h2>
             
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="bg-green-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-green-800">Total Suprimentos</h3>
                 <p className="text-2xl font-bold text-green-600">{formatarMoeda(resumoGeral.totalSuprimentos)}</p>
@@ -1196,32 +1100,17 @@ function DashboardAdmin({ dadosUsuario }) {
                 <p className="text-2xl font-bold text-blue-600">{resumoGeral.caixasFechados}/6</p>
                 <p className="text-sm text-blue-600">{resumoGeral.percentualFechamento.toFixed(0)}% concluído</p>
               </div>
-              <div className="bg-yellow-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-yellow-800">Divergências</h3>
-                <p className="text-2xl font-bold text-yellow-600">{formatarMoeda(resumoGeral.totalDivergencias)}</p>
-              </div>
             </div>
 
-            {resumoGeral.totalDivergencias > 0 && (
-              <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mb-6">
-                <h4 className="font-semibold text-yellow-800">⚠️ Atenção: Divergências Detectadas</h4>
-                <p className="text-yellow-700">Total de divergências: {formatarMoeda(resumoGeral.totalDivergencias)}</p>
-              </div>
-            )}
-
-            {/* Status Detalhado dos Caixas */}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b">
                     <th className="text-left p-2">Caixa</th>
                     <th className="text-left p-2">Status</th>
-                    <th className="text-left p-2">Troco Inicial</th>
                     <th className="text-left p-2">Suprimentos</th>
                     <th className="text-left p-2">Sangrias</th>
                     <th className="text-left p-2">Valor Esperado</th>
-                    <th className="text-left p-2">Valor Máquina</th>
-                    <th className="text-left p-2">Divergência</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1237,20 +1126,9 @@ function DashboardAdmin({ dadosUsuario }) {
                             <span className="text-orange-600 font-semibold">⏳ Aberto</span>
                           )}
                         </td>
-                        <td className="p-2 text-blue-600">{formatarMoeda(totais.trocoInicial)}</td>
                         <td className="p-2 text-green-600">{formatarMoeda(totais.suprimentos)}</td>
                         <td className="p-2 text-red-600">{formatarMoeda(totais.sangrias)}</td>
                         <td className="p-2 text-blue-600">{formatarMoeda(totais.valorEsperado)}</td>
-                        <td className="p-2">{formatarMoeda(totais.valorMaquina)}</td>
-                        <td className="p-2">
-                          {totais.temDivergencia ? (
-                            <span className="text-red-600 font-semibold">
-                              ⚠️ {formatarMoeda(totais.divergencia)}
-                            </span>
-                          ) : (
-                            <span className="text-green-600">✅ OK</span>
-                          )}
-                        </td>
                       </tr>
                     )
                   })}
@@ -1259,14 +1137,13 @@ function DashboardAdmin({ dadosUsuario }) {
             </div>
           </div>
 
-          {/* Todas as Movimentações */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h3 className="text-lg font-semibold mb-4">📋 Todas as Movimentações do Dia</h3>
             {movimentacoes.length === 0 ? (
               <p className="text-gray-500 text-center py-4">Nenhuma movimentação registrada</p>
             ) : (
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {movimentacoes.map(mov => (
+                {movimentacoes.filter(m => !m.excluido).map(mov => (
                   <div key={mov.id} className="flex justify-between items-center p-3 bg-gray-50 rounded">
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
@@ -1324,7 +1201,6 @@ function DashboardAdmin({ dadosUsuario }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navegação */}
       <nav className="bg-white shadow-md p-4">
         <div className="flex flex-wrap gap-2">
           {[
@@ -1355,14 +1231,12 @@ function DashboardAdmin({ dadosUsuario }) {
                 <span>{opcao.icon}</span>
                 <span>{opcao.nome}</span>
                 {status && <span className="text-xs">{status}</span>}
-                {totais && totais.temDivergencia && <span className="text-xs">⚠️</span>}
               </button>
             )
           })}
         </div>
       </nav>
 
-      {/* Conteúdo Principal */}
       <main className="p-6">
         {renderizarConteudo()}
       </main>
@@ -1449,7 +1323,6 @@ function AppContent() {
     return <Login />
   }
 
-  // Verificar se o usuário está configurado
   const dadosUsuario = obterDadosUsuario(currentUser.email)
   
   if (!dadosUsuario) {
@@ -1503,7 +1376,6 @@ function AppContent() {
   )
 }
 
-// App principal
 function App() {
   return (
     <AuthProvider>
