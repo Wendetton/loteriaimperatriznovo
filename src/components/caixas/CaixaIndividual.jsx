@@ -1,276 +1,233 @@
 import { useState, useEffect } from 'react'
-import { useCaixa } from '../../contexts/CaixaContext'
-import FormularioMovimentacao from './FormularioMovimentacao'
-import ListaMovimentacoes from './ListaMovimentacoes'
-import ResumoFinanceiro from './ResumoFinanceiro'
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
-import { Calculator, Save, AlertTriangle, CheckCircle } from 'lucide-react'
+import TrocoControl from './TrocoControl'
+import formatarMoeda from '../../utils/formatarMoeda'
 
-export default function CaixaIndividual({ numeroCaixa }) {
-  const { 
-    obterDadosCaixa, 
-    obterMovimentacoesCaixa,
-    atualizarDadosCaixa,
-    adicionarMovimentacaoCaixa,
-    calcularResumoFinanceiro,
-    dataAtual,
-    loading,
-    error,
-    setError
-  } = useCaixa()
-
-  const [dados, setDados] = useState({})
+export default function CaixaIndividual({ numero, dataSelecionada }) {
   const [movimentacoes, setMovimentacoes] = useState([])
-  const [resumo, setResumo] = useState({})
-  const [salvando, setSalvando] = useState(false)
+  const [dadosCaixa, setDadosCaixa] = useState({
+    trocoInicial: 0,
+    valorMaquina: 0,
+    fechado: false
+  })
+  
+  const [novoSuprimento, setNovoSuprimento] = useState({ valor: '', observacao: '' })
+  const [novaSangria, setNovaSangria] = useState({ valor: '', observacao: '' })
+  const [novoTroco, setNovoTroco] = useState('')
+  const [novoValorMaquina, setNovoValorMaquina] = useState('')
 
+  // Carregar dados ao montar o componente
   useEffect(() => {
-    // Carregar dados do caixa
-    const dadosCaixa = obterDadosCaixa(numeroCaixa)
-    const movsCaixa = obterMovimentacoesCaixa(numeroCaixa)
-    const resumoCaixa = calcularResumoFinanceiro(numeroCaixa)
+    const chaveMovimentacoes = `movimentacoes_caixa_${numero}_${dataSelecionada}`
+    const chaveDados = `dados_caixa_${numero}_${dataSelecionada}`
 
-    setDados(dadosCaixa)
-    setMovimentacoes(movsCaixa)
-    setResumo(resumoCaixa)
-  }, [numeroCaixa, obterDadosCaixa, obterMovimentacoesCaixa, calcularResumoFinanceiro])
-
-  const handleSalvarDados = async () => {
-    try {
-      setSalvando(true)
-      setError('')
-      await atualizarDadosCaixa(numeroCaixa, dados)
-      
-      // Mostrar feedback de sucesso
-      setTimeout(() => setSalvando(false), 1000)
-    } catch (error) {
-      console.error('Erro ao salvar:', error)
-      setSalvando(false)
-    }
-  }
-
-  const handleAdicionarMovimentacao = async (movimentacao) => {
-    try {
-      await adicionarMovimentacaoCaixa(numeroCaixa, movimentacao)
-      
-      // Atualizar dados locais
-      const novasMovs = obterMovimentacoesCaixa(numeroCaixa)
-      const novoResumo = calcularResumoFinanceiro(numeroCaixa)
-      
-      setMovimentacoes(novasMovs)
-      setResumo(novoResumo)
-    } catch (error) {
-      console.error('Erro ao adicionar movimentação:', error)
-    }
-  }
-
-  const handleAtualizarCampo = (campo, valor) => {
-    const novosDados = { ...dados, [campo]: valor }
-    setDados(novosDados)
-    
-    // Recalcular resumo se necessário
-    if (campo === 'saldoInicial' || campo === 'valorMaquina') {
-      const novoResumo = calcularResumoFinanceiro(numeroCaixa)
-      setResumo(novoResumo)
-    }
-  }
-
-  const formatarMoeda = (valor) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(valor || 0)
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando dados do caixa...</p>
-        </div>
-      </div>
+    const movs = JSON.parse(localStorage.getItem(chaveMovimentacoes) || '[]')
+    const dados = JSON.parse(
+      localStorage.getItem(chaveDados) ||
+      '{"trocoInicial":0,"valorMaquina":0,"fechado":false}'
     )
+
+    setMovimentacoes(movs)
+    setDadosCaixa(dados)
+  }, [numero, dataSelecionada])
+
+  // Cálculos de totais
+  const totalSuprimentos = movimentacoes
+    .filter((m) => m.tipo === 'suprimento')
+    .reduce((total, m) => total + m.valor, 0)
+
+  const totalSangrias = movimentacoes
+    .filter((m) => m.tipo === 'sangria')
+    .reduce((total, m) => total + m.valor, 0)
+
+  const valorEsperado =
+    dadosCaixa.trocoInicial + totalSuprimentos - totalSangrias
+
+  const divergencia = dadosCaixa.valorMaquina - valorEsperado
+
+  // Funções de definição e movimentações (legado)
+  const definirTrocoInicial = () => {
+    const valor = parseFloat(novoTroco)
+    if (!valor || valor <= 0) {
+      alert('Digite um valor válido para o troco inicial')
+      return
+    }
+    const novosDados = { ...dadosCaixa, trocoInicial: valor }
+    setDadosCaixa(novosDados)
+    localStorage.setItem(
+      `dados_caixa_${numero}_${dataSelecionada}`,
+      JSON.stringify(novosDados)
+    )
+    setNovoTroco('')
+    alert('Troco inicial definido com sucesso!')
   }
 
+  const definirValorMaquina = () => {
+    const valor = parseFloat(novoValorMaquina)
+    if (!valor || valor <= 0) {
+      alert('Digite um valor válido para o valor da máquina')
+      return
+    }
+    const novosDados = { ...dadosCaixa, valorMaquina: valor }
+    setDadosCaixa(novosDados)
+    localStorage.setItem(
+      `dados_caixa_${numero}_${dataSelecionada}`,
+      JSON.stringify(novosDados)
+    )
+    setNovoValorMaquina('')
+    alert('Valor da máquina definido com sucesso!')
+  }
+
+  const adicionarSuprimento = () => {
+    const valor = parseFloat(novoSuprimento.valor)
+    if (!valor || valor <= 0) {
+      alert('Digite um valor válido para a sangria')
+      return
+    }
+    const novaMovimentacao = {
+      id: Date.now(),
+      tipo: 'suprimento',
+      valor,
+      observacao: novoSuprimento.observacao,
+      data: new Date().toISOString()
+    }
+    const novasMovimentacoes = [...movimentacoes, novaMovimentacao]
+    setMovimentacoes(novasMovimentacoes)
+    localStorage.setItem(
+      `movimentacoes_caixa_${numero}_${dataSelecionada}`,
+      JSON.stringify(novasMovimentacoes)
+    )
+    setNovoSuprimento({ valor: '', observacao: '' })
+    alert('Suprimento adicionado com sucesso!')
+  }
+
+  const adicionarSangria = () => {
+    const valor = parseFloat(novaSangria.valor)
+    if (!valor || valor <= 0) {
+      alert('Digite um valor válido para a sangria')
+      return
+    }
+    const novaMov = {
+      id: Date.now(),
+      tipo: 'sangria',
+      valor,
+      observacao: novaSangria.observacao,
+      data: new Date().toISOString()
+    }
+    const movs = [...movimentacoes, novaMov]
+    setMovimentacoes(movs)
+    localStorage.setItem(
+      `movimentacoes_caixa_${numero}_${dataSelecionada}`,
+      JSON.stringify(movs)
+    )
+    setNovaSangria({ valor: '', observacao: '' })
+    alert('Sangria adicionada com sucesso!')
+  }
+
+  // Renderização
   return (
-    <div className="space-y-6">
-      {/* Header do Caixa */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <Calculator className="h-6 w-6 text-primary" />
-          <h2 className="text-2xl font-bold">Caixa {numeroCaixa}</h2>
-          <span className="text-muted-foreground">- {dataAtual}</span>
+    <div>
+      {/* Resumo Financeiro */}
+      <div className="grid grid-cols-3 gap-6 mb-6">
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-semibold text-blue-800 mb-3">🪙 Troco Inicial</h3>
+          <p className="text-2xl font-bold text-blue-600">
+            {formatarMoeda(dadosCaixa.trocoInicial)}
+          </p>
         </div>
-        <button
-          onClick={handleSalvarDados}
-          disabled={salvando}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-            salvando 
-              ? 'bg-green-100 text-green-700 cursor-not-allowed' 
-              : 'bg-primary text-white hover:bg-primary/90'
-          }`}
-        >
-          <Save className="h-4 w-4" />
-          <span>{salvando ? 'Salvo!' : 'Salvar'}</span>
-          {salvando && <span className="text-xs">✓</span>}
-        </button>
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-semibold text-green-800 mb-3">💧 Suprimentos</h3>
+          <p className="text-2xl font-bold text-green-600">
+            {formatarMoeda(totalSuprimentos)}
+          </p>
+        </div>
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-semibold text-red-800 mb-3">✂️ Sangrias</h3>
+          <p className="text-2xl font-bold text-red-600">
+            {formatarMoeda(totalSangrias)}
+          </p>
+        </div>
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-semibold mb-3">🎯 Valor Esperado</h3>
+          <p className="text-2xl font-bold text-purple-600">
+            {formatarMoeda(valorEsperado)}
+          </p>
+        </div>
       </div>
 
-      {/* Mensagem de Erro */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center space-x-2">
-            <AlertTriangle className="h-5 w-5 text-red-600" />
-            <p className="text-red-700">{error}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Resumo Financeiro */}
-      <ResumoFinanceiro resumo={resumo} />
-
-      {/* Comparação Final */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Calculator className="h-5 w-5" />
-            <span>Comparação Final</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
-              <div className="flex items-center justify-center space-x-2 mb-2">
-                <Calculator className="h-4 w-4 text-blue-600" />
-                <span className="text-sm font-medium text-blue-600">Saldo Calculado</span>
-              </div>
-              <p className="text-2xl font-bold text-blue-600">
-                {formatarMoeda(resumo.saldoCalculado)}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">Inicial + Suprimentos - Sangrias</p>
-            </div>
-            
-            <div className="text-center p-4 bg-purple-50 rounded-lg">
-              <div className="flex items-center justify-center space-x-2 mb-2">
-                <span className="text-sm font-medium text-purple-600">Valor da Máquina</span>
-              </div>
-              <p className="text-2xl font-bold text-purple-600">
-                {dados.valorMaquina !== null ? 
-                  formatarMoeda(dados.valorMaquina) : 
-                  'Não informado'
-                }
-              </p>
-              <p className="text-xs text-gray-500 mt-1">Valor informado pelo operador</p>
-            </div>
-          </div>
-
-          {/* Indicador de Divergência */}
-          {dados.valorMaquina !== null && (
-            <div className={`mt-4 p-3 rounded-lg border ${
-              resumo.temDivergencia 
-                ? 'bg-red-50 border-red-200' 
-                : 'bg-green-50 border-green-200'
-            }`}>
-              <div className="flex items-center justify-center space-x-2">
-                {resumo.temDivergencia ? (
-                  <>
-                    <AlertTriangle className="h-5 w-5 text-red-600" />
-                    <span className="font-medium text-red-700">
-                      Divergência de {formatarMoeda(Math.abs(resumo.diferenca))}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="h-5 w-5 text-green-600" />
-                    <span className="font-medium text-green-700">
-                      Valores conferem
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Configurações Iniciais */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Configurações Iniciais</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Saldo Inicial (R$)
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              value={dados.saldoInicial || ''}
-              onChange={(e) => handleAtualizarCampo('saldoInicial', parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-              placeholder="0,00"
-            />
-            <p className="text-xs text-gray-500 mt-1">Saldo do fechamento do dia anterior</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Valor Final da Máquina */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Valor Final da Máquina</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Valor Informado (R$)
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              value={dados.valorMaquina || ''}
-              onChange={(e) => handleAtualizarCampo('valorMaquina', parseFloat(e.target.value) || null)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-              placeholder="0,00"
-            />
-            <p className="text-xs text-gray-500 mt-1">Valor mostrado na máquina ao final do expediente</p>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Novo controle de troco digital */}
+      <TrocoControl caixaId={numero} />
 
       {/* Formulários de Movimentação */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <FormularioMovimentacao 
-          tipo="suprimento" 
-          onAdicionar={handleAdicionarMovimentacao}
-        />
-        <FormularioMovimentacao 
-          tipo="sangria" 
-          onAdicionar={handleAdicionarMovimentacao}
-        />
+      <div className="grid grid-cols-2 gap-6 mb-6">
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-semibold text-green-800 mb-3">
+            ➕ Adicionar Suprimento
+          </h3>
+          <div className="space-y-3">
+            <input
+              type="number"
+              value={novoSuprimento.valor}
+              onChange={(e) =>
+                setNovoSuprimento({
+                  ...novoSuprimento,
+                  valor: e.target.value
+                })
+              }
+              placeholder="Valor (R$)"
+              className="w-full p-2 border rounded"
+            />
+            <input
+              type="text"
+              value={novoSuprimento.observacao}
+              onChange={(e) =>
+                setNovoSuprimento({
+                  ...novoSuprimento,
+                  observacao: e.target.value
+                })
+              }
+              placeholder="Observação (opcional)"
+              className="w-full p-2 border rounded"
+            />
+            <button
+              onClick={adicionarSuprimento}
+              className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+            >
+              Registrar Suprimento
+            </button>
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-semibold text-red-800 mb-3">➖ Adicionar Sangria</h3>
+          <div className="space-y-3">
+            <input
+              type="number"
+              value={novaSangria.valor}
+              onChange={(e) =>
+                setNovaSangria({ ...novaSangria, valor: e.target.value })
+              }
+              placeholder="Valor (R$)"
+              className="w-full p-2 border rounded"
+            />
+            <input
+              type="text"
+              value={novaSangria.observacao}
+              onChange={(e) =>
+                setNovaSangria({ ...novaSangria, observacao: e.target.value })
+              }
+              placeholder="Observação (opcional)"
+              className="w-full p-2 border rounded"
+            />
+            <button
+              onClick={adicionarSangria}
+              className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+            >
+              Registrar Sangria
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Lista de Movimentações */}
-      <ListaMovimentacoes movimentacoes={movimentacoes} />
-
-      {/* Observações do Dia */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Observações do Dia</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <textarea
-            value={dados.observacoes || ''}
-            onChange={(e) => handleAtualizarCampo('observacoes', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-            rows={4}
-            placeholder="Adicione observações sobre as operações do dia..."
-          />
-        </CardContent>
-      </Card>
+      {/* ... restante do componente (lista de movimentações, status, etc.) ... */}
     </div>
   )
 }
-
