@@ -1096,11 +1096,6 @@ function AppContent() {
     new Date().toISOString().split('T')[0]
   )
 
-  // Se já carregou e não há usuário, mostra a tela de Login
-  if (!user) {
-    return <Login />
-  }
-
   const renderizarConteudo = () => {
     if (caixaAtivo === 'resumo') {
       return <ResumoGeral dataSelecionada={dataSelecionada} />
@@ -1151,4 +1146,3 @@ function App() {
 }
 
 export default App
-
