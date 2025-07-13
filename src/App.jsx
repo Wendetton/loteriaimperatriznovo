@@ -1090,7 +1090,7 @@ function ResumoGeral({ dataSelecionada }) {
 
 // Componente Principal
 function AppContent() {
-  const { user, logout, loading } = useAuth()
+  const { user, logout } = useAuth()
   const [caixaAtivo, setCaixaAtivo] = useState('resumo')
   const [dataSelecionada, setDataSelecionada] = useState(
     new Date().toISOString().split('T')[0]
