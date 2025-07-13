@@ -1090,11 +1090,24 @@ function ResumoGeral({ dataSelecionada }) {
 
 // Componente Principal
 function AppContent() {
-  const { user, logout } = useAuth()
+  const { user, logout, loading } = useAuth()
   const [caixaAtivo, setCaixaAtivo] = useState('resumo')
   const [dataSelecionada, setDataSelecionada] = useState(
     new Date().toISOString().split('T')[0]
   )
+  // Enquanto carrega o estado de autenticação
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-lg">Carregando...</p>
+      </div>
+    )
+  }
+
+  // Se já carregou e não há usuário, mostra a tela de Login
+  if (!user) {
+    return <Login />
+  }
 
   const renderizarConteudo = () => {
     if (caixaAtivo === 'resumo') {
